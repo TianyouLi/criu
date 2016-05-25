@@ -138,9 +138,9 @@ LIBS		:= -lrt -lpthread -lprotobuf-c -ldl
 DEFINES		+= -D_FILE_OFFSET_BITS=64
 DEFINES		+= -D_GNU_SOURCE
 
-WARNINGS	:= -Wall
 
 ifneq ($(WERROR),0)
+	WARNINGS := -Wall
 	WARNINGS += -Werror
 endif
 
