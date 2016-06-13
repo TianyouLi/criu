@@ -44,8 +44,10 @@ struct ptrace_peeksiginfo_args {
 # define PTRACE_SETREGSET	0x4205
 #endif
 
+#ifndef PTRACE_GETSIGMASK
 #define PTRACE_GETSIGMASK	0x420a
 #define PTRACE_SETSIGMASK	0x420b
+#endif
 
 #define PTRACE_SEIZE_DEVEL	0x80000000
 
