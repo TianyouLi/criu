@@ -197,12 +197,13 @@ int main(int argc, char *argv[], char *envp[])
 	int log_level = LOG_UNSET;
 	char *imgs_dir = ".";
 	char *work_dir = NULL;
-	static const char short_opts[] = "dSsRf:F:t:p:hcD:o:n:v::x::Vr:jlW:L:M:";
+	static const char short_opts[] = "dSsRQf:F:t:p:hcD:o:n:v::x::Vr:jlW:L:M:";
 	static struct option long_opts[] = {
 		{ "tree",			required_argument,	0, 't'	},
 		{ "pid",			required_argument,	0, 'p'	},
 		{ "leave-stopped",		no_argument,		0, 's'	},
 		{ "leave-running",		no_argument,		0, 'R'	},
+		{ "put-quicklake",	no_argument,	0,	'Q'},
 		{ "restore-detached",		no_argument,		0, 'd'	},
 		{ "restore-sibling",		no_argument,		0, 'S'	},
 		{ "daemon",			no_argument,		0, 'd'	},
@@ -291,6 +292,9 @@ int main(int argc, char *argv[], char *envp[])
 			break;
 		case 'R':
 			opts.final_state = TASK_ALIVE;
+			break;
+		case 'Q':
+			opts.final_state = TASK_QL;
 			break;
 		case 'x':
 			if (optarg && unix_sk_ids_parse(optarg) < 0)
@@ -686,6 +690,7 @@ usage:
 "  -t|--tree PID         checkpoint a process tree identified by PID\n"
 "  -d|--restore-detached detach after restore\n"
 "  -S|--restore-sibling  restore root task as sibling\n"
+"  -Q|--put-quicklake    put task into quicklake state after checkpoint\n"
 "  -s|--leave-stopped    leave tasks in stopped state after checkpoint\n"
 "  -R|--leave-running    leave tasks in running state after checkpoint\n"
 "  -D|--images-dir DIR   directory for image files\n"

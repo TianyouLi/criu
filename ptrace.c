@@ -22,6 +22,7 @@
 #include "crtools.h"
 #include "security.h"
 #include "seccomp.h"
+#include "quicklake.h"
 
 int unseize_task(pid_t pid, int orig_st, int st)
 {
@@ -36,6 +37,8 @@ int unseize_task(pid_t pid, int orig_st, int st)
 		/* PTRACE_SEIZE will restore state of other tasks */
 	} else if (st == TASK_ALIVE) {
 		/* do nothing */ ;
+	} else if (st == TASK_QL) {
+		switch_ql_state(pid);		
 	} else
 		pr_err("Unknown final state %d\n", st);
 
