@@ -1,5 +1,6 @@
 targets			+= parasite
 targets			+= restorer
+targets			+= quicklake
 
 obj-y			+= log-simple.o
 obj-y			+= util.o
@@ -26,6 +27,10 @@ restorer-obj-y		+= restorer.o
 restorer-obj-e		+= $(ARCH_DIR)/restorer.o
 restorer-libs-e		+= $(SYSCALL-LIB)
 
+quicklake-obj-y		+= quicklake-service.o
+quicklake-asm-e		+= $(ARCH_DIR)/quicklake-head.o
+quicklake-libs-e	+= $(SYSCALL-LIB)
+
 #
 # We can't provide proper mount implementation
 # in parasite code -- it requires run-time rellocation
@@ -46,7 +51,7 @@ endif
 ASMFLAGS		+= -D__ASSEMBLY__
 
 GEN-OFFSETS		:= ../scripts/gen-offsets.sh
-BLOBS			:= $(obj)/parasite-blob.h $(obj)/restorer-blob.h
+BLOBS			:= $(obj)/parasite-blob.h $(obj)/restorer-blob.h $(obj)/quicklake-blob.h
 
 PIELDS			:= pie.lds.S
 
