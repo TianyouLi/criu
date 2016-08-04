@@ -1155,7 +1155,7 @@ void parasite_ensure_args_size(unsigned long sz)
 		parasite_args_size = sz;
 }
 
-static int parasite_start_daemon(struct parasite_ctl *ctl, struct pstree_item *item)
+int parasite_start_daemon(struct parasite_ctl *ctl, struct pstree_item *item)
 {
 	pid_t pid = ctl->pid.real;
 
