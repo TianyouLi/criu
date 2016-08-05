@@ -13,4 +13,5 @@ message inventory_entry {
 	optional bool			ns_per_id	= 4;
 	optional uint32			root_cg_set	= 5;
 	optional lsmtype		lsmtype		= 6;
+	optional bool			is_quicklake_task	= 7;
 }
