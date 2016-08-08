@@ -12,6 +12,12 @@
  * all orphaned children in the system.
  */
 #define INIT_PID	(1)
+enum {
+	PS_RESTORE,
+	PS_DUMP,
+	PS_QUICKLAKE,
+};
+
 struct pstree_item {
 	struct pstree_item	*parent;
 	struct list_head	children;	/* list of my children */
@@ -47,6 +53,18 @@ struct dmp_info {
 
 };
 
+struct ql_info {
+	/* Offset of netns should be same as that in dmp_info */
+	struct ns_id *netns;
+
+	struct proc_status_creds *pi_creds;
+};
+
+static inline struct ql_info *qli(struct pstree_item *i)
+{
+	return (struct ql_info *) (i + 1);
+}
+
 static inline struct dmp_info *dmpi(struct pstree_item *i)
 {
 	return (struct dmp_info *)(i + 1);
@@ -65,9 +83,10 @@ static inline bool task_alive(struct pstree_item *i)
 }
 
 extern void free_pstree(struct pstree_item *root_item);
-extern struct pstree_item *__alloc_pstree_item(bool rst);
-#define alloc_pstree_item() __alloc_pstree_item(false)
-#define alloc_pstree_item_with_rst() __alloc_pstree_item(true)
+extern struct pstree_item *__alloc_pstree_item(int type);
+#define alloc_pstree_item() __alloc_pstree_item(PS_DUMP)
+#define alloc_pstree_item_with_rst() __alloc_pstree_item(PS_RESTORE)
+#define alloc_pstree_item_with_ql()	__alloc_pstree_item(PS_QUICKLAKE)
 extern struct pstree_item *alloc_pstree_helper(void);
 
 extern struct pstree_item *root_item;
@@ -93,5 +112,6 @@ extern int pstree_alloc_cores(struct pstree_item *item);
 extern void pstree_free_cores(struct pstree_item *item);
 
 extern int collect_pstree_ids(void);
+extern int ql_read_pstree_image(void);
 
 #endif /* __CR_PSTREE_H__ */

@@ -19,6 +19,7 @@ bool img_common_magic = true;
 TaskKobjIdsEntry *root_ids;
 u32 root_cg_set;
 Lsmtype image_lsm;
+bool is_quicklake_task = false;
 
 int check_img_inventory(void)
 {
@@ -35,6 +36,7 @@ int check_img_inventory(void)
 
 	fdinfo_per_id = he->has_fdinfo_per_id ?  he->fdinfo_per_id : false;
 	ns_per_id = he->has_ns_per_id ? he->ns_per_id : false;
+	is_quicklake_task = he->is_quicklake_task;
 
 	if (he->root_ids) {
 		root_ids = xmalloc(sizeof(*root_ids));

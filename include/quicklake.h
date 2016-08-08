@@ -6,6 +6,7 @@
 
 #define ql_sym(pblob, name) ((void *) (pblob) + quicklake_blob_offset__##name)
 
-extern int switch_ql_state(pid_t pid);
+extern int switch_ql_state(pid_t pid, int request);
+extern int restore_ql_task();
 
 #endif

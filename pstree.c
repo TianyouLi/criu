@@ -159,24 +159,32 @@ void free_pstree(struct pstree_item *root_item)
 	}
 }
 
-struct pstree_item *__alloc_pstree_item(bool rst)
+struct pstree_item *__alloc_pstree_item(int type)
 {
 	struct pstree_item *item;
 	int sz;
 
-	if (!rst) {
-		sz = sizeof(*item) + sizeof(struct dmp_info);
-		item = xzalloc(sz);
-		if (!item)
-			return NULL;
-	} else {
+	switch (type) {
+	case PS_RESTORE:
 		sz = sizeof(*item) + sizeof(struct rst_info);
 		item = shmalloc(sz);
 		if (!item)
 			return NULL;
-
 		memset(item, 0, sz);
 		vm_area_list_init(&rsti(item)->vmas);
+		break;
+	case PS_DUMP:
+		sz = sizeof(*item) + sizeof(struct dmp_info);
+		item = xzalloc(sz);
+		if (!item)
+			return NULL;
+		break;
+	case PS_QUICKLAKE:
+		sz = sizeof(*item) + sizeof(struct ql_info);
+		item = xzalloc(sz);
+		if (!item)
+			return NULL;
+		break;
 	}
 
 	INIT_LIST_HEAD(&item->children);
@@ -770,4 +778,105 @@ bool pid_in_pstree(pid_t pid)
 	}
 
 	return false;
+}
+
+int ql_read_pstree_image(void)
+{
+	int ret = 0, i;
+	struct cr_img *img;
+	struct pstree_item *pi, *parent = NULL;
+
+	pr_info("Reading image tree\n");
+
+	img = open_image(CR_FD_PSTREE, O_RSTR);
+	if (!img)
+		return -1;
+
+	while (1) {
+		PstreeEntry *e;
+
+		ret = pb_read_one_eof(img, &e, PB_PSTREE);
+		if (ret <= 0)
+			break;
+
+		ret = -1;
+		pi = alloc_pstree_item_with_ql();
+		if (pi == NULL)
+			break;
+
+		pi->pid.virt = e->pid;
+		pi->pgid = e->pgid;
+		pi->sid = e->sid;
+
+		if (e->ppid == 0) {
+			if (root_item) {
+				pr_err("Parent missed on non-root task "
+				       "with pid %d, image corruption!\n", e->pid);
+				goto err;
+			}
+			root_item = pi;
+			pi->parent = NULL;
+		} else {
+			/*
+			 * Fast path -- if the pstree image is not edited, the
+			 * parent of any item should have already being restored
+			 * and sit among the last item's ancestors.
+			 */
+			while (parent) {
+				if (parent->pid.virt == e->ppid)
+					break;
+				parent = parent->parent;
+			}
+
+			if (parent == NULL) {
+				for_each_pstree_item(parent) {
+					if (parent->pid.virt == e->ppid)
+						break;
+				}
+
+				if (parent == NULL) {
+					pr_err("Can't find a parent for %d\n", pi->pid.virt);
+					pstree_entry__free_unpacked(e, NULL);
+					xfree(pi);
+					goto err;
+				}
+			}
+
+			pi->parent = parent;
+			list_add(&pi->sibling, &parent->children);
+		}
+
+		parent = pi;
+
+		pi->nr_threads = e->n_threads;
+		pi->threads = xmalloc(e->n_threads * sizeof(struct pid));
+		if (!pi->threads)
+			break;
+
+		for (i = 0; i < e->n_threads; i++) {
+			pi->threads[i].real = -1;
+			pi->threads[i].virt = e->threads[i];
+		}
+
+		pstree_entry__free_unpacked(e, NULL);
+
+		{
+			struct cr_img *img;
+
+			img = open_image(CR_FD_IDS, O_RSTR, pi->pid.virt);
+			if (!img)
+				goto err;
+			ret = pb_read_one_eof(img, &pi->ids, PB_IDS);
+			close_image(img);
+		}
+
+		if (ret == 0)
+			continue;
+		if (ret < 0)
+			goto err;
+
+	}
+err:
+	close_image(img);
+	return ret;
 }

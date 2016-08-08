@@ -38,7 +38,7 @@ int unseize_task(pid_t pid, int orig_st, int st)
 	} else if (st == TASK_ALIVE) {
 		/* do nothing */ ;
 	} else if (st == TASK_QL) {
-		switch_ql_state(pid);		
+		switch_ql_state(pid, QL_DUMP);
 	} else
 		pr_err("Unknown final state %d\n", st);
 

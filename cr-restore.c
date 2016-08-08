@@ -76,6 +76,7 @@
 #include "security.h"
 #include "lsm.h"
 #include "seccomp.h"
+#include "quicklake.h"
 
 #include "parasite-syscall.h"
 
@@ -120,6 +121,7 @@ static unsigned long helpers_pos = 0;
 static int n_helpers = 0;
 static unsigned long zombies_pos = 0;
 static int n_zombies = 0;
+extern bool is_quicklake_task;
 
 static int crtools_prepare_shared(void)
 {
@@ -1986,6 +1988,11 @@ int cr_restore_tasks(void)
 	if (opts.cpu_cap & (CPU_CAP_INS | CPU_CAP_CPU)) {
 		if (cpu_validate_cpuinfo())
 			goto err;
+	}
+
+	if (is_quicklake_task) {
+		ret = restore_ql_task();
+		goto err;
 	}
 
 	if (prepare_task_entries() < 0)

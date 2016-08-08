@@ -7,23 +7,30 @@
 #include <sys/stat.h>
 
 #include "parasite.h"
-#include "parasite-syscall.h"
 #include "quicklake-blob.h"
+#include "parasite-syscall.h"
 #include "vma.h"
 #include "pstree.h"
+#include "ptrace.h"
 #include "util.h"
 #include "quicklake.h"
+#include "protobuf.h"
 #include "asm/restorer.h"
 #include "pie/pie-relocs.h"
+#include "namespaces.h"
+#include "asm/dump.h"
+#include "seize.h"
+#include "net.h"
 
 static unsigned long parasite_args_size = PARASITE_ARG_SIZE_MIN;
-int switch_ql_state(pid_t pid)
+
+int switch_ql_state(pid_t pid, int request)
 {
 	int fd = open_proc_rw(pid, "crstat");
 	
 	if (fd < 0)
 		return -1;
-	if (ioctl(fd, QL_DUMP))
+	if (ioctl(fd, request))
 		return -1;
 	close(fd);
 	return 0;
@@ -36,7 +43,7 @@ static struct parasite_ctl *parasite_seized(pid_t pid, struct pstree_item *item,
 	struct parasite_ctl *ctl;
 	unsigned long p, map_exchange_size;
 
-	BUG_ON(item->threads[0].real != pid);
+	BUG_ON(item->threads[0].virt != pid);
 
 	/* Search area for mmap system call */
 	ctl = parasite_prep_ctl(pid, vma_area_list);
@@ -45,6 +52,7 @@ static struct parasite_ctl *parasite_seized(pid_t pid, struct pstree_item *item,
 	//TODO: check argument size
 
 	ctl->args_size = round_up(parasite_args_size, PAGE_SIZE);
+	ctl->pid.real = pid;
 	parasite_args_size = PARASITE_ARG_SIZE_MIN; /* reset for next task */
 	map_exchange_size = pie_size(quicklake_blob) + ctl->args_size;
 	map_exchange_size += RESTORE_STACK_SIGFRAME + PARASITE_STACK_SIZE;
@@ -70,6 +78,7 @@ static struct parasite_ctl *parasite_seized(pid_t pid, struct pstree_item *item,
 	ctl->addr_cmd = ql_sym(ctl->local_map, __export_parasite_cmd);
 	ctl->addr_args = ql_sym(ctl->local_map, __export_parasite_args);
 
+
 	p = pie_size(quicklake_blob) + ctl->args_size;
 
 	ctl->rsigframe = ctl->remote_map + p;
@@ -84,8 +93,9 @@ static struct parasite_ctl *parasite_seized(pid_t pid, struct pstree_item *item,
 		ctl->r_thread_stack = ctl->remote_map + p;
 	}
 
-	if (parasite_start_daemon(ctl, item))
+	if (parasite_start_daemon(ctl, item)) {
 		goto err_restore;
+	}
 
 	return ctl;
 
@@ -98,9 +108,11 @@ err_restore:
 static int ql_restore_one_task(struct pstree_item *item)
 {
 	struct vm_area_list vmas;
-	pid_t pid = item->pid.real;
+	pid_t pid = item->pid.virt;
 	struct parasite_ctl *parasite_ctl;
 	int ret, exit_code = -1;
+	struct cr_img *img;
+	CoreEntry *core_entry;
 
 	INIT_LIST_HEAD(&vmas.h);
 	vmas.nr = 0;
@@ -112,6 +124,16 @@ static int ql_restore_one_task(struct pstree_item *item)
 	/* zombies are restored later */
 	if (item->state == TASK_DEAD)
 		return 0;
+
+	/* Load core info */
+	img = open_image(CR_FD_CORE, O_RSTR, item->pid.virt);
+	if (!img)
+		goto err;
+	ret = pb_read_one(img, &core_entry, PB_CORE);
+	close_image(img);
+	if (ret < 0)
+		goto err;
+	item->core = &core_entry;
 
 	/*
 	 * We collect mappings for parasite code injection. We can save the address
@@ -135,9 +157,96 @@ static int ql_restore_one_task(struct pstree_item *item)
 
 	//TODO: restore ...
 
+	ret = parasite_stop_daemon(parasite_ctl);
+	if (ret) {
+		pr_err("Can't stop daemon (pid: %d) from ql parasite\n", pid);
+		goto err;
+	}
+
+	if (parasite_cure_seized(parasite_ctl)) {
+		pr_err("Can't cure (pid: %d) from ql parasite\n", pid);
+		goto err;
+	}
 
 	exit_code = 0;
 err:
 	free_mappings(&vmas);
 	return exit_code;
+}
+
+int freeze_pstree()
+{
+	struct pstree_item *pi;
+
+	pr_info("Wakeup and freeze the ql task\n");
+	for (pi = root_item; pi; pi = pstree_item_next(pi)) {
+		/*
+		 * TODO: the ql-task should stop after switching to
+		 * QL_RESTORE state and before we seize it.
+		 */
+		int ret = switch_ql_state(pi->pid.virt, QL_RESTORE);
+		ret = seize_catch_task(pi->pid.virt);
+		if (ret) {
+			pr_err("Fail to seize ql task: %d\n", pi->pid.virt);
+			return ret;
+		}
+		ret = seize_wait_task(pi->pid.virt, -1, &qli(pi)->pi_creds);
+		if (ret < 0)
+			return ret;
+		pi->state = ret;
+		pr_info("state:%d\n", ret);
+	}
+	return 0;
+}
+
+static int prepare_socket(void)
+{
+	struct pstree_item *pi;
+
+	/* Setup client socket for ql parasite communication */
+	for_each_pstree_item(pi) {
+		pr_info("Generate socket for pid: %d\n", pi->pid.virt);
+		qli(pi)->netns = xmalloc(sizeof(struct ns_id));
+		//FIXME: Is it ok that we don't init netns ?
+		qli(pi)->netns->net.seqsk = socket(PF_UNIX, SOCK_SEQPACKET, 0);
+		if (qli(pi)->netns->net.seqsk < 0) {
+			pr_err("Can't create seqsk for ql parasite\n");
+			return -1;
+		}
+	}
+	return 0;
+}
+
+int restore_ql_task()
+{
+	int ret;
+	struct pstree_item *item;
+
+	ret = ql_read_pstree_image();
+	if (ret < 0)
+		goto err;
+
+	/* Create socket per process other than ns */
+	ret = prepare_socket();
+	if (ret)
+		goto err;
+
+	ret = freeze_pstree();
+	if (ret)
+		goto err;
+	for_each_pstree_item(item) {
+		if (ql_restore_one_task(item))
+			goto err;
+	}
+
+	for_each_pstree_item(item) {
+		pid_t ori_real = item->pid.real;
+		item->pid.real = item->pid.virt;
+		//TODO: We should assign the real state instead of TASK_ALIVE
+		unseize_task_and_threads(item, TASK_ALIVE);
+		item->pid.real = ori_real;
+	}
+	pr_info("Restore quicklake task successfully!!!\n");
+err:
+	return ret;
 }
