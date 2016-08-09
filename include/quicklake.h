@@ -1,8 +1,8 @@
 #ifndef __CR_QUICKLAKE_H
 #define __CR_QUICKLAKE_H
 
-#define QL_DUMP		2257	
-#define QL_RESTORE	2261
+#define QL_DUMP		38144
+#define QL_RESTORE	38145
 
 #define ql_sym(pblob, name) ((void *) (pblob) + quicklake_blob_offset__##name)
 
