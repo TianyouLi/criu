@@ -271,6 +271,20 @@ static int drain_fds(struct parasite_drain_fd *args)
 	return ret;
 }
 
+static int quicklake_free_files(struct parasite_drain_fd *args)
+{
+	int i = 0;
+
+	for (i = 0; i < args->nr_fds; i++) {
+		int fd = args->fds[i];
+
+		//TODO: How to handle file lock?
+
+		pr_info("Free fd %d\n", fd);
+	}
+	return 0;
+}
+
 static int dump_thread(struct parasite_dump_thread *args)
 {
 	args->tid = sys_gettid();
@@ -618,6 +632,8 @@ static noinline __used int noinline parasite_daemon(void *args)
 		case PARASITE_CMD_CHECK_VDSO_MARK:
 			ret = parasite_check_vdso_mark(args);
 			break;
+		case PARASITE_CMD_FREE_FILE:
+			ret = quicklake_free_files(args);
 		default:
 			pr_err("Unknown command in parasite daemon thread leader: %d\n", m.cmd);
 			ret = -1;

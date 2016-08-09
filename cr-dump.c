@@ -80,6 +80,7 @@
 #include "lsm.h"
 #include "seccomp.h"
 #include "seize.h"
+#include "quicklake.h"
 
 #include "asm/dump.h"
 
@@ -1289,6 +1290,16 @@ static int dump_one_task(struct pstree_item *item)
 	if (ret) {
 		pr_err("Dump creds (pid: %d) failed with %d\n", pid, ret);
 		goto err;
+	}
+
+	/* Quicklake need to close the files */
+	if (dfds && opts.final_state == TASK_QL) {
+		ret = ql_free_file(parasite_ctl, item, dfds);
+		if (ret) {
+			pr_err("Free files (pid: %d) failed with %d\n", pid, ret);
+			//FIXME: Do we need to stop the dumpee if failing to free files?
+			goto err_cure;
+		}
 	}
 
 	ret = parasite_stop_daemon(parasite_ctl);
