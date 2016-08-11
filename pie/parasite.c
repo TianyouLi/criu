@@ -279,6 +279,10 @@ static int quicklake_free_files(struct parasite_drain_fd *args)
 		int fd = args->fds[i];
 
 		//TODO: How to handle file lock?
+		if (sys_close(fd)) {
+			pr_err("Can't close fd %d\n", fd);
+			return -1;
+		}
 
 		pr_info("Free fd %d\n", fd);
 	}
@@ -634,6 +638,7 @@ static noinline __used int noinline parasite_daemon(void *args)
 			break;
 		case PARASITE_CMD_FREE_FILE:
 			ret = quicklake_free_files(args);
+			break;
 		default:
 			pr_err("Unknown command in parasite daemon thread leader: %d\n", m.cmd);
 			ret = -1;

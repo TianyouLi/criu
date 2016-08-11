@@ -229,7 +229,6 @@ static inline void copy_sas(ThreadSasEntry *dst, const stack_t *src)
 struct parasite_drain_fd {
 	int	nr_fds;
 	int	fds[PARASITE_MAX_FDS];
-	int ql_flags[PARASITE_MAX_FDS];
 };
 
 static inline int drain_fds_size(struct parasite_drain_fd *dfds)
