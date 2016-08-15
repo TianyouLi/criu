@@ -637,7 +637,7 @@ static unsigned long get_clone_mask(TaskKobjIdsEntry *i,
 	return mask;
 }
 
-static int prepare_pstree_kobj_ids(void)
+int prepare_pstree_kobj_ids(void)
 {
 	struct pstree_item *item;
 

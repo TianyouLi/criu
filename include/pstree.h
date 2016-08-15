@@ -36,12 +36,6 @@ struct pstree_item {
 	TaskKobjIdsEntry	*ids;
 };
 
-/* See alloc_pstree_item() for details */
-static inline struct rst_info *rsti(struct pstree_item *i)
-{
-	return (struct rst_info *)(i + 1);
-}
-
 struct ns_id;
 struct dmp_info {
 	struct ns_id *netns;
@@ -54,19 +48,23 @@ struct dmp_info {
 };
 
 struct ql_info {
-	/* Offset of netns should be same as that in dmp_info */
-	struct ns_id *netns;
-
-	struct proc_status_creds *pi_creds;
+	struct dmp_info dmp_info;
+	struct rst_info rst_info;
 };
 
-static inline struct ql_info *qli(struct pstree_item *i)
+extern bool is_quicklake_task;
+/* See alloc_pstree_item() for details */
+static inline struct rst_info *rsti(struct pstree_item *i)
 {
-	return (struct ql_info *) (i + 1);
+	if (is_quicklake_task)
+		return &(((struct ql_info *)(i + 1))->rst_info);
+	return (struct rst_info *)(i + 1);
 }
 
 static inline struct dmp_info *dmpi(struct pstree_item *i)
 {
+	if (is_quicklake_task)
+		return &(((struct ql_info *)(i + 1))->dmp_info);
 	return (struct dmp_info *)(i + 1);
 }
 
@@ -113,5 +111,6 @@ extern void pstree_free_cores(struct pstree_item *item);
 
 extern int collect_pstree_ids(void);
 extern int ql_read_pstree_image(void);
+extern int prepare_pstree_kobj_ids(void);
 
 #endif /* __CR_PSTREE_H__ */

@@ -21,6 +21,20 @@
 #include "asm/dump.h"
 #include "seize.h"
 #include "net.h"
+/* Required by cinfos */
+#include "sk-inet.h"
+#include "files-reg.h"
+#include "pipes.h"
+#include "timerfd.h"
+#include "signalfd.h"
+#include "file-lock.h"
+#include "sk-packet.h"
+#include "tun.h"
+#include "eventpoll.h"
+#include "tty.h"
+#include "fifo.h"
+#include "eventfd.h"
+#include "fsnotify.h"
 
 static unsigned long parasite_args_size = PARASITE_ARG_SIZE_MIN;
 
@@ -190,7 +204,7 @@ int freeze_pstree()
 			pr_err("Fail to seize ql task: %d\n", pi->pid.virt);
 			return ret;
 		}
-		ret = seize_wait_task(pi->pid.virt, -1, &qli(pi)->pi_creds);
+		ret = seize_wait_task(pi->pid.virt, -1, &dmpi(pi)->pi_creds);
 		if (ret < 0)
 			return ret;
 		pi->state = ret;
@@ -206,14 +220,87 @@ static int prepare_socket(void)
 	/* Setup client socket for ql parasite communication */
 	for_each_pstree_item(pi) {
 		pr_info("Generate socket for pid: %d\n", pi->pid.virt);
-		qli(pi)->netns = xmalloc(sizeof(struct ns_id));
+		dmpi(pi)->netns = xmalloc(sizeof(struct ns_id));
 		//FIXME: Is it ok that we don't init netns ?
-		qli(pi)->netns->net.seqsk = socket(PF_UNIX, SOCK_SEQPACKET, 0);
-		if (qli(pi)->netns->net.seqsk < 0) {
+		dmpi(pi)->netns->net.seqsk = socket(PF_UNIX, SOCK_SEQPACKET, 0);
+		if (dmpi(pi)->netns->net.seqsk < 0) {
 			pr_err("Can't create seqsk for ql parasite\n");
 			return -1;
 		}
 	}
+	return 0;
+}
+
+static struct collect_image_info *cinfos[] = {
+	&reg_file_cinfo,
+	&remap_cinfo,
+	&nsfile_cinfo,
+	&pipe_cinfo,
+	&fifo_cinfo,
+	&unix_sk_cinfo,
+	&packet_sk_cinfo,
+	&netlink_sk_cinfo,
+	&eventfd_cinfo,
+	&epoll_tfd_cinfo,
+	&epoll_cinfo,
+	&signalfd_cinfo,
+	&inotify_cinfo,
+	&inotify_mark_cinfo,
+	&fanotify_cinfo,
+	&fanotify_mark_cinfo,
+	&tty_info_cinfo,
+	&tty_cinfo,
+	&tunfile_cinfo,
+	&ext_file_cinfo,
+	&timerfd_cinfo,
+	&file_locks_cinfo,
+};
+
+static int ql_prepare_shared(void)
+{
+	int i;
+	struct pstree_item *pi;
+
+	/* init file_desc_hash */
+	if (prepare_shared_fdinfo())
+		return -1;
+
+	if (collect_inet_sockets())
+		return -1;
+
+	for (i = 0; i < ARRAY_SIZE(cinfos); ++i) {
+		unsigned flags = cinfos[i]->flags;
+		int ret;
+
+		/* change flags of unix_sk_cinfo */
+		cinfos[i]->flags &= ~COLLECT_SHARED;
+		ret = collect_image(cinfos[i]);
+		cinfos[i]->flags = flags;
+		if (ret)
+			return -1;
+	}
+
+	if (collect_pipes())
+		return -1;
+
+	if (collect_fifo())
+		return -1;
+
+	if (collect_unix_sockets())
+		return -1;
+
+	for_each_pstree_item(pi) {
+		if (prepare_fd_pid(pi) < 0)
+			return -1;
+	}
+
+	mark_pipe_master();
+
+	//TODO: Setup tty
+
+	if (resolve_unix_peers())
+		return -1;
+
 	return 0;
 }
 
@@ -226,6 +313,15 @@ int restore_ql_task()
 	if (ret < 0)
 		goto err;
 
+	ret = prepare_pstree_kobj_ids();
+	if (ret)
+		goto err;
+
+	if (ql_prepare_shared() < 0) {
+		pr_err("Can't prepare shared info\n");
+		goto err;
+	}
+
 	/* Create socket per process other than ns */
 	ret = prepare_socket();
 	if (ret)
@@ -234,6 +330,7 @@ int restore_ql_task()
 	ret = freeze_pstree();
 	if (ret)
 		goto err;
+
 	for_each_pstree_item(item) {
 		if (ql_restore_one_task(item))
 			goto err;
