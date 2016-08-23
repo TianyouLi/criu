@@ -74,14 +74,14 @@ static int fini()
 	return -1;
 }
 
-static int ql_reopen_fd_as(int old_fd, int new_fd, bool allow_reuse_fd)
+static int ql_reopen_fd_as(int old_fd, int new_fd, struct fd_opts *opt,
+		bool allow_reuse_fd)
 {
 	if (old_fd != new_fd) {
 		if (!allow_reuse_fd) {
 			if (sys_fcntl(new_fd, F_GETFD, 0) != -EBADF) {
 				ql_debug("new fd %d already in use (old fd:%d)\n", new_fd,
 						old_fd);
-				ql_debug("%d\n",errno);
 				return -1;
 			}
 		}
@@ -92,6 +92,12 @@ static int ql_reopen_fd_as(int old_fd, int new_fd, bool allow_reuse_fd)
 		if (sys_close(old_fd)) {
 			ql_debug("Fail to close old fd %d\n", old_fd);
 			return -1;
+		}
+		if (opt) {
+			if (sys_fcntl(new_fd, F_SETFD, opt->flags)) {
+				ql_debug("Fail to set fd(%d) flags(%d)\n", new_fd, opt->flags);
+				return -1;
+			}
 		}
 	}
 	return 0;
@@ -118,13 +124,13 @@ int ql_restore_files(struct parasite_drain_fd *args)
 	ql_debug("Now dup tsock %d->%d, log fd %d->%d\n", tsock, max_fd + 1,
 			logfd, max_fd + 2);
 
-	if (ql_reopen_fd_as(tsock, max_fd + 1, false)) {
+	if (ql_reopen_fd_as(tsock, max_fd + 1, NULL, false)) {
 		pr_err("Can't dup tsock %d->%d\n", tsock, max_fd + 1);
 		return -1;
 	}
 	tsock = max_fd + 1;
 
-	if (ql_reopen_fd_as(logfd, max_fd + 2, false)) {
+	if (ql_reopen_fd_as(logfd, max_fd + 2, NULL, false)) {
 		pr_err("Can't dup logfd %d->%d\n", logfd, max_fd + 2);
 		return -1;
 	}
@@ -134,14 +140,14 @@ int ql_restore_files(struct parasite_drain_fd *args)
 	/* The method I use is similar to the restore of VMA in last stage. */
 	for (i = 0; i < args->nr_fds; i++) {
 		if (args->fds[i] <= fds[i]) {
-			if (ql_reopen_fd_as(fds[i], args->fds[i], false))
+			if (ql_reopen_fd_as(fds[i], args->fds[i], opts + i, false))
 				return -1;
 		} else
 			break;
 	}
 	for (i = args->nr_fds - 1; i >= 0; --i) {
 		if (args->fds[i] > fds[i]) {
-			if (ql_reopen_fd_as(fds[i], args->fds[i], false))
+			if (ql_reopen_fd_as(fds[i], args->fds[i], opts + i, false))
 				return -1;
 		} else
 			break;

@@ -192,7 +192,7 @@ static int parasite_send_fds(struct parasite_ctl *ctl, struct pstree_item *pi)
 	}
 
 	BUG_ON(nr_new_fds != dfds->nr_fds);
-	ret = send_fds(ctl->tsock, NULL, 0, new_fds, nr_new_fds, false);
+	ret = send_fds(ctl->tsock, NULL, 0, new_fds, nr_new_fds, true);
 	if (ret) {
 		pr_err("Fail to send fds\n");
 		goto err;
