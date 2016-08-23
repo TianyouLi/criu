@@ -636,7 +636,7 @@ static noinline __used int noinline parasite_daemon(void *args)
 		case PARASITE_CMD_CHECK_VDSO_MARK:
 			ret = parasite_check_vdso_mark(args);
 			break;
-		case PARASITE_CMD_FREE_FILE:
+		case QUICKLAKE_CMD_FREE_FILE:
 			ret = quicklake_free_files(args);
 			break;
 		default:

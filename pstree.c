@@ -184,6 +184,7 @@ struct pstree_item *__alloc_pstree_item(int type)
 		item = xzalloc(sz);
 		if (!item)
 			return NULL;
+		vm_area_list_init(&rsti(item)->vmas);
 		break;
 	}
 

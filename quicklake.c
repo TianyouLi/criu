@@ -64,6 +64,7 @@ static struct parasite_ctl *parasite_seized(pid_t pid, struct pstree_item *item,
 	if (!ctl)
 		return NULL;
 	//TODO: check argument size
+	parasite_ensure_args_size(drain_fds_size(&(qli(item)->dfds)));
 
 	ctl->args_size = round_up(parasite_args_size, PAGE_SIZE);
 	ctl->pid.real = pid;
@@ -118,6 +119,93 @@ err_restore:
 	return NULL;
 }
 
+static int ql_open_fdinfos(struct pstree_item *pi, struct list_head *list)
+{
+	struct fdinfo_list_entry *fle;
+	struct parasite_drain_fd *dfds = &(qli(pi)->dfds);
+
+	list_for_each_entry(fle, list, ps_list) {
+		struct file_desc *d = fle->desc;
+		int fd;
+
+		dfds->fds[dfds->nr_fds++] = fle->fe->fd;
+		if (fle != file_master(d))
+			continue;
+
+		fd = d->ops->open(d);
+		if (fd < 0)
+			return -1;
+		d->new_fd = fd;
+	}
+	return 0;
+}
+
+static int ql_prepare_files(struct pstree_item *pi)
+{
+	if (rsti(pi)->fdt && rsti(pi)->fdt->pid != pi->pid.virt) {
+		pr_info("File descriptor table is shared with %d\n", rsti(pi)->fdt->pid);
+		goto stop;
+	}
+
+	if (ql_open_fdinfos(pi, &rsti(pi)->fds))
+		return -1;
+
+	//TODO: handle tty and eventpoll
+
+stop:
+	return 0;
+}
+
+static int parasite_send_fds(struct parasite_ctl *ctl, struct pstree_item *pi)
+{
+	int ret = -1, size, *new_fds = NULL, nr_new_fds = 0;
+	struct parasite_drain_fd *args, *dfds;
+	struct fdinfo_list_entry *fle;
+
+	dfds = &(qli(pi)->dfds);
+	if (!dfds->nr_fds)
+		return 0;
+
+	size = drain_fds_size(dfds);
+	args = parasite_args_s(ctl, size);
+	memcpy(args, dfds, size);
+
+	ret = __parasite_execute_daemon(QUICKLAKE_CMD_RESTORE_FILE, ctl);
+	if (ret) {
+		pr_err("Parasite failed to sync restore_files\n");
+		goto err;
+	}
+
+	ret = __parasite_wait_daemon_ack(QUICKLAKE_CMD_RESTORE_FILE, ctl);
+	if (ret)
+		goto err;
+
+	new_fds = xmalloc(size);
+	if (!new_fds) {
+		pr_err("Fail to allocate new fds\n");
+		ret = -1;
+		goto err;
+	}
+
+	list_for_each_entry(fle, &rsti(pi)->fds, ps_list) {
+		new_fds[nr_new_fds++] = fle->desc->new_fd;
+	}
+
+	BUG_ON(nr_new_fds != dfds->nr_fds);
+	ret = send_fds(ctl->tsock, NULL, 0, new_fds, nr_new_fds, false);
+	if (ret) {
+		pr_err("Fail to send fds\n");
+		goto err;
+	}
+
+	ret = __parasite_wait_daemon_ack(QUICKLAKE_CMD_RESTORE_FILE, ctl);
+
+err:
+	if (new_fds)
+		xfree(new_fds);
+	return ret;
+}
+
 /* Restore task in quicklake state */
 static int ql_restore_one_task(struct pstree_item *item)
 {
@@ -142,11 +230,11 @@ static int ql_restore_one_task(struct pstree_item *item)
 	/* Load core info */
 	img = open_image(CR_FD_CORE, O_RSTR, item->pid.virt);
 	if (!img)
-		goto err;
+		goto stop;
 	ret = pb_read_one(img, &core_entry, PB_CORE);
 	close_image(img);
 	if (ret < 0)
-		goto err;
+		goto stop;
 	item->core = &core_entry;
 
 	/*
@@ -156,7 +244,7 @@ static int ql_restore_one_task(struct pstree_item *item)
 	ret = collect_mappings(pid, &vmas);
 	if (ret) {
 		pr_err("Collect mappings (pid: %d) failed with %d\n", pid, ret);
-		goto err;
+		goto stop;
 	}
 
 	//TODO
@@ -166,11 +254,17 @@ static int ql_restore_one_task(struct pstree_item *item)
 	parasite_ctl = parasite_seized(pid, item, &vmas);
 	if (!parasite_ctl) {
 		pr_err("Can't infect (pid: %d) with ql parasite\n", pid);
-		goto err;
+		goto stop;
 	}
 
 	//TODO: restore ...
+	ret = parasite_send_fds(parasite_ctl, item);
+	if (ret) {
+		pr_err("Can't send fds of pid(%d) with ql parasite\n", pid);
+		goto stop;
+	}
 
+stop:
 	ret = parasite_stop_daemon(parasite_ctl);
 	if (ret) {
 		pr_err("Can't stop daemon (pid: %d) from ql parasite\n", pid);
@@ -304,6 +398,14 @@ static int ql_prepare_shared(void)
 	return 0;
 }
 
+static int ql_prepare_namespace(void)
+{
+	pr_info("Restore namespace\n");
+	if (prepare_mnt_ns())
+		return -1;
+	return 0;
+}
+
 int restore_ql_task()
 {
 	int ret;
@@ -316,6 +418,11 @@ int restore_ql_task()
 	ret = prepare_pstree_kobj_ids();
 	if (ret)
 		goto err;
+
+	ret = ql_prepare_namespace();
+	if (ret)
+		goto err;
+
 
 	if (ql_prepare_shared() < 0) {
 		pr_err("Can't prepare shared info\n");
@@ -330,6 +437,11 @@ int restore_ql_task()
 	ret = freeze_pstree();
 	if (ret)
 		goto err;
+
+	for_each_pstree_item(item) {
+		if (ql_prepare_files(item))
+			goto err;
+	}
 
 	for_each_pstree_item(item) {
 		if (ql_restore_one_task(item))
@@ -360,13 +472,13 @@ int ql_free_file(struct parasite_ctl *ctl, struct pstree_item *item,
 	args = parasite_args_s(ctl, size);
 	memcpy(args, dfds, size);
 
-	ret = __parasite_execute_daemon(PARASITE_CMD_FREE_FILE, ctl);
+	ret = __parasite_execute_daemon(QUICKLAKE_CMD_FREE_FILE, ctl);
 	if (ret) {
 		pr_err("Quicklake failed to free files\n");
 		goto err;
 	}
 
-	ret |= __parasite_wait_daemon_ack(PARASITE_CMD_FREE_FILE, ctl);
+	ret |= __parasite_wait_daemon_ack(QUICKLAKE_CMD_FREE_FILE, ctl);
 err:
 	return ret;
 }

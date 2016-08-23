@@ -6,6 +6,7 @@
 #include "image.h"
 #include "rst_info.h"
 #include "protobuf/core.pb-c.h"
+#include "parasite.h"
 
 /*
  * That's the init process which usually inherit
@@ -50,6 +51,7 @@ struct dmp_info {
 struct ql_info {
 	struct dmp_info dmp_info;
 	struct rst_info rst_info;
+	struct parasite_drain_fd dfds;
 };
 
 extern bool is_quicklake_task;
@@ -66,6 +68,11 @@ static inline struct dmp_info *dmpi(struct pstree_item *i)
 	if (is_quicklake_task)
 		return &(((struct ql_info *)(i + 1))->dmp_info);
 	return (struct dmp_info *)(i + 1);
+}
+
+static inline struct ql_info *qli(struct pstree_item *pi)
+{
+	return (struct ql_info *)(pi + 1);
 }
 
 /* ids is alocated and initialized for all alive tasks */

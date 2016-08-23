@@ -2,13 +2,13 @@
 #include <errno.h>
 
 #include "parasite.h"
-#include "quicklake-service.h"
 #include "syscall.h"
 #include "log.h"
 #include "asm/parasite.h"
 #include "asm/restorer.h"
 
 static int tsock = -1;
+static int logfd = -1;
 
 static struct rt_sigframe *sigframe;
 
@@ -74,8 +74,79 @@ static int fini()
 	return -1;
 }
 
-int ql_restore_files(void *args)
+static int ql_reopen_fd_as(int old_fd, int new_fd, bool allow_reuse_fd)
 {
+	if (old_fd != new_fd) {
+		if (!allow_reuse_fd) {
+			if (sys_fcntl(new_fd, F_GETFD, 0) != -EBADF) {
+				ql_debug("new fd %d already in use (old fd:%d)\n", new_fd,
+						old_fd);
+				ql_debug("%d\n",errno);
+				return -1;
+			}
+		}
+		if (sys_dup2(old_fd, new_fd) < 0) {
+			ql_debug("Fail to dup fd %d as %d\n", old_fd, new_fd);
+			return -1;
+		}
+		if (sys_close(old_fd)) {
+			ql_debug("Fail to close old fd %d\n", old_fd);
+			return -1;
+		}
+	}
+	return 0;
+}
+
+//FIXME: We assume that value of fds and args->fds are in order
+int ql_restore_files(struct parasite_drain_fd *args)
+{
+	int ret, max_fd = 0, i;
+	int fds[PARASITE_MAX_FDS];
+	struct fd_opts opts[PARASITE_MAX_FDS];
+
+	ret = ql_daemon_reply_ack(QUICKLAKE_CMD_RESTORE_FILE, 0);
+	if (ret)
+		return ret;
+
+	ret = recv_fds(tsock, fds, args->nr_fds, opts);
+	if (ret)
+		return ret;
+
+	/* redirect tsock and log fd which may clash with args->fds */
+	max_fd = args->fds[args->nr_fds - 1] > fds[args->nr_fds - 1] ?
+			args->fds[args->nr_fds - 1] : fds[args->nr_fds - 1];
+	ql_debug("Now dup tsock %d->%d, log fd %d->%d\n", tsock, max_fd + 1,
+			logfd, max_fd + 2);
+
+	if (ql_reopen_fd_as(tsock, max_fd + 1, false)) {
+		pr_err("Can't dup tsock %d->%d\n", tsock, max_fd + 1);
+		return -1;
+	}
+	tsock = max_fd + 1;
+
+	if (ql_reopen_fd_as(logfd, max_fd + 2, false)) {
+		pr_err("Can't dup logfd %d->%d\n", logfd, max_fd + 2);
+		return -1;
+	}
+	logfd = max_fd + 2;
+	log_set_fd(logfd);
+
+	/* The method I use is similar to the restore of VMA in last stage. */
+	for (i = 0; i < args->nr_fds; i++) {
+		if (args->fds[i] <= fds[i]) {
+			if (ql_reopen_fd_as(fds[i], args->fds[i], false))
+				return -1;
+		} else
+			break;
+	}
+	for (i = args->nr_fds - 1; i >= 0; --i) {
+		if (args->fds[i] > fds[i]) {
+			if (ql_reopen_fd_as(fds[i], args->fds[i], false))
+				return -1;
+		} else
+			break;
+	}
+
 	return 0;
 }
 
@@ -104,7 +175,7 @@ static noinline __used int noinline ql_daemon(void *args)
 		switch (m.cmd) {
 		case PARASITE_CMD_FINI:
 			goto out;
-		case QUICKLAKE_CMD_RESTORE_FILES:
+		case QUICKLAKE_CMD_RESTORE_FILE:
 			ret = ql_restore_files(args);
 			break;
 		default:
@@ -163,9 +234,9 @@ static noinline __used int ql_init_daemon(void *data)
 		goto err;
 	}
 
-	ret = recv_fd(tsock);
-	if (ret >= 0) {
-		log_set_fd(ret);
+	logfd = recv_fd(tsock);
+	if (logfd >= 0) {
+		log_set_fd(logfd);
 		log_set_loglevel(args->log_level);
 		ret = 0;
 	} else

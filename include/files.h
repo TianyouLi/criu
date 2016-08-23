@@ -118,6 +118,7 @@ struct file_desc {
 	struct hlist_node	hash;		/* Descriptor hashing and lookup */
 	struct list_head	fd_info_head;	/* Chain of fdinfo_list_entry-s with same ID and type but different pids */
 	struct file_desc_ops	*ops;		/* Associated operations */
+	int new_fd;			/* fd of file which is opened in quicklake */
 };
 
 struct fdtype_ops {

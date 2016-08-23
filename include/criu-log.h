@@ -54,6 +54,11 @@ extern void print_on_level(unsigned int loglevel, const char *format, ...)
 		       "Error (%s:%d): " LOG_PREFIX fmt,		\
 		       __FILE__, __LINE__, ##__VA_ARGS__)
 
+#define ql_debug(fmt, ...)						\
+	print_on_level(LOG_ERROR,					\
+		       "(%s:%d): " LOG_PREFIX fmt,		\
+		       __FILE__, __LINE__, ##__VA_ARGS__)
+
 #define pr_err_once(fmt, ...)						\
 	do {								\
 		static bool __printed;					\

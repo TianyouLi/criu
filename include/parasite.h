@@ -1,7 +1,6 @@
 #ifndef __CR_PARASITE_H__
 #define __CR_PARASITE_H__
 
-#define PARASITE_STACK_SIZE	(16 << 10)
 #define PARASITE_ARG_SIZE_MIN	( 1 << 12)
 
 #define PARASITE_MAX_SIZE	(64 << 10)
@@ -51,7 +50,8 @@ enum {
 	PARASITE_CMD_CHECK_AIOS,
 
 	/* Add by quicklake */
-	PARASITE_CMD_FREE_FILE,
+	QUICKLAKE_CMD_FREE_FILE,
+	QUICKLAKE_CMD_RESTORE_FILE,
 
 	PARASITE_CMD_MAX,
 };
@@ -235,6 +235,10 @@ static inline int drain_fds_size(struct parasite_drain_fd *dfds)
 {
 	return sizeof(dfds->nr_fds) + dfds->nr_fds * sizeof(dfds->fds[0]);
 }
+
+#define MIN_STACK_SIZE	(16 << 10)
+#define PARASITE_STACK_SIZE ALIGN(MIN_STACK_SIZE +	\
+		(sizeof(int) * sizeof(struct fd_opts) * PARASITE_MAX_FDS), PAGE_SIZE)
 
 struct parasite_tty_args {
 	int	fd;
