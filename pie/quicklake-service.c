@@ -103,6 +103,7 @@ static int ql_reopen_fd_as(int old_fd, int new_fd, struct fd_opts *opt,
 	return 0;
 }
 
+// restore eventpoll, sk-inet, sk-unix, timerfd, 'tty' after reopen
 //FIXME: We assume that value of fds and args->fds are in order
 int ql_restore_files(struct parasite_drain_fd *args)
 {

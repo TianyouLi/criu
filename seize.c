@@ -274,7 +274,6 @@ free:
 	return ret < 0 ? ret : nr_inprogress;
 }
 
-//QLM
 void unseize_task_and_threads(const struct pstree_item *item, int st)
 {
 	int i;

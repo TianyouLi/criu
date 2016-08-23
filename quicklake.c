@@ -150,8 +150,10 @@ static int ql_prepare_files(struct pstree_item *pi)
 	if (ql_open_fdinfos(pi, &rsti(pi)->fds))
 		return -1;
 
-	//TODO: handle tty and eventpoll
+	if (ql_open_fdinfos(pi, &rsti(pi)->eventpoll))
+		return -1;
 
+	//TODO: handle tty
 stop:
 	return 0;
 }
