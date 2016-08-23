@@ -451,8 +451,8 @@ int restore_ql_task()
 	for_each_pstree_item(item) {
 		pid_t ori_real = item->pid.real;
 		item->pid.real = item->pid.virt;
-		//TODO: We should assign the real state instead of TASK_ALIVE
-		unseize_task_and_threads(item, TASK_ALIVE);
+		BUG_ON(item->state > TASK_STOPPED);
+		unseize_task_and_threads(item, item->state);
 		item->pid.real = ori_real;
 	}
 	pr_info("Restore quicklake task successfully!!!\n");
