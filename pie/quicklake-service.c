@@ -110,13 +110,16 @@ static int ql_restore_epoll_add(struct epoll_arg *epoll_arg)
 	struct epoll_event event;
 	int i;
 	int fd = epoll_arg->epoll_fd;
+	int ret;
 
 	ql_debug("Restore epoll fd %d\n", fd);
 	for (i = 0; i < epoll_arg->nr_fd; i++) {
 		event.events = epoll_arg->p[i].event;
 		event.data.u64 = epoll_arg->p[i].event_data;
-		if (sys_epoll_ctl(fd, EPOLL_CTL_ADD, epoll_arg->p[i].fd, &event)) {
-			pr_err("Can't add event of %d on %#08x\n", fd, i);
+		ret = sys_epoll_ctl(fd, EPOLL_CTL_ADD, epoll_arg->p[i].fd, &event);
+		if (ret) {
+			pr_err("Can't add eventpoll of %d on %d(%d)\n", fd,
+					epoll_arg->p[i].fd, ret);
 			return -1;
 		}
 	}

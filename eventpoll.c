@@ -190,14 +190,14 @@ void eventpoll_collect_args(struct file_desc *d, struct epoll_arg *arg)
 	info = container_of(d, struct eventpoll_file_info, d);
 
 	for (i = 0; i < info->efe->n_tfd; i++) {
-		arg->p[i].fd = info->efe->id;
+		arg->p[i].fd = info->efe->tfd[i]->tfd;
 		arg->p[i].event = info->efe->tfd[i]->events;
 		arg->p[i].event_data = info->efe->tfd[i]->data;
 	}
 
 	list_for_each_entry(td_info, &eventpoll_tfds, list) {
 		if (td_info->tdefe->id == info->efe->id) {
-			arg->p[i].fd = info->efe->id;
+			arg->p[i].fd = td_info->tdefe->tfd;
 			arg->p[i].event = td_info->tdefe->events;
 			arg->p[i++].event_data = td_info->tdefe->data;
 		}
