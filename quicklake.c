@@ -171,6 +171,7 @@ static int parasite_add_epoll(struct parasite_ctl *ctl, struct pstree_item *pi)
 	struct fdinfo_list_entry *fle;
 	struct epoll_arg *epoll_arg;
 	int epoll_size;
+	int ret;
 
 	list_for_each_entry(fle, &rsti(pi)->eventpoll, ps_list) {
 		int nr_epoll_fd = eventpoll_count_tfds(fle->desc);
@@ -184,14 +185,16 @@ static int parasite_add_epoll(struct parasite_ctl *ctl, struct pstree_item *pi)
 		epoll_arg->nr_fd = nr_epoll_fd;
 		eventpoll_collect_args(fle->desc, epoll_arg);
 
-		if (__parasite_execute_daemon(QUICKLAKE_CMD_EPOLL_ADD, ctl)) {
+		ret = __parasite_execute_daemon(QUICKLAKE_CMD_EPOLL_ADD, ctl);
+		if (ret) {
 			pr_err("Can't epoll %d add tfd", epoll_arg->epoll_fd);
-			return -1;
+			return ret;
 		}
 
-		if (__parasite_wait_daemon_ack(QUICKLAKE_CMD_EPOLL_ADD, ctl)) {
+		ret = __parasite_wait_daemon_ack(QUICKLAKE_CMD_EPOLL_ADD, ctl);
+		if (ret) {
 			pr_err("Can't wait epoll ack %d\n", epoll_arg->epoll_fd);
-			return -1;
+			return ret;
 		}
 	}
 	return 0;
@@ -256,7 +259,7 @@ static int ql_restore_one_task(struct pstree_item *item)
 	struct vm_area_list vmas;
 	pid_t pid = item->pid.virt;
 	struct parasite_ctl *parasite_ctl;
-	int ret, exit_code = -1;
+	int ret;
 	struct cr_img *img;
 	CoreEntry *core_entry;
 
@@ -303,32 +306,33 @@ static int ql_restore_one_task(struct pstree_item *item)
 
 	ret = parasite_send_fds(parasite_ctl, item);
 	if (ret) {
-		pr_err("Can't send fds of pid(%d) with ql parasite\n", pid);
+		pr_err("Can't send fds of pid(%d) with ql parasite: %s\n", pid,
+				strerror(-ret));
 		goto stop;
 	}
 
 	ret = parasite_add_epoll(parasite_ctl, item);
 	if (ret) {
-		pr_err("Can' t add epolls of pid(%d)\n", pid);
+		pr_err("Can' t add epolls of pid(%d): %s\n", pid, strerror(-ret));
 		goto stop;
 	}
 
 stop:
-	ret = parasite_stop_daemon(parasite_ctl);
-	if (ret) {
+	if (parasite_stop_daemon(parasite_ctl)) {
 		pr_err("Can't stop daemon (pid: %d) from ql parasite\n", pid);
+		ret = -EPERM;
 		goto err;
 	}
 
 	if (parasite_cure_seized(parasite_ctl)) {
+		ret = -EPERM;
 		pr_err("Can't cure (pid: %d) from ql parasite\n", pid);
 		goto err;
 	}
 
-	exit_code = 0;
 err:
 	free_mappings(&vmas);
-	return exit_code;
+	return ret;
 }
 
 int freeze_pstree()
@@ -487,12 +491,14 @@ int restore_ql_task()
 		goto err;
 
 	for_each_pstree_item(item) {
-		if (ql_prepare_files(item))
+		ret = ql_prepare_files(item);
+		if (ret)
 			goto err;
 	}
 
 	for_each_pstree_item(item) {
-		if (ql_restore_one_task(item))
+		ret = ql_restore_one_task(item);
+		if (ret)
 			goto err;
 	}
 

@@ -323,7 +323,7 @@ int __parasite_wait_daemon_ack(unsigned int cmd,
 	if (m.err != 0) {
 		pr_err("Command %d for daemon failed with %d\n",
 		       cmd, m.err);
-		return -1;
+		return m.err;
 	}
 
 	return 0;

@@ -11,19 +11,20 @@
 
 static int tsock = -1;
 static int logfd = -1;
+static int retno;
 
 static struct rt_sigframe *sigframe;
 
 static int ql_daemon_reply_ack(unsigned int cmd, int err)
 {
 	struct ctl_msg m;
-	int ret;
 
 	m = ctl_msg_ack(cmd, err);
-	ret = sys_sendto(tsock, &m, sizeof(m), 0, NULL, 0);
-	if (ret != sizeof(m)) {
-		pr_err("Sent only %d bytes while %zd expected\n", ret, sizeof(m));
-		return -1;
+	retno = sys_sendto(tsock, &m, sizeof(m), 0, NULL, 0);
+	if (retno != sizeof(m)) {
+		pr_err("Sent only %d bytes while %zd expected\n", retno, sizeof(m));
+		retno = -EINVAL;
+		return retno;
 	}
 
 	pr_debug("__sent ack msg: %d %d %d\n", m.cmd, m.ack, m.err);
@@ -33,17 +34,16 @@ static int ql_daemon_reply_ack(unsigned int cmd, int err)
 
 static int ql_daemon_wait_msg(struct ctl_msg *m)
 {
-	int ret;
-
 	pr_debug("Daemon waits for command\n");
 
 	while (1) {
 		*m = (struct ctl_msg){ };
-		ret = sys_recvfrom(tsock, m, sizeof(*m), MSG_WAITALL, NULL, 0);
-		if (ret != sizeof(*m)) {
+		retno = sys_recvfrom(tsock, m, sizeof(*m), MSG_WAITALL, NULL, 0);
+		if (retno != sizeof(*m)) {
 			pr_err("Trimmed message received (%d/%d)\n", (int) sizeof(*m),
-					ret);
-			return -1;
+					retno);
+			retno = -EINVAL;
+			return retno;
 		}
 
 		pr_debug("__fetched msg: %d %d %d\n", m->cmd, m->ack, m->err);
@@ -84,21 +84,27 @@ static int ql_reopen_fd_as(int old_fd, int new_fd, struct fd_opts *opt,
 			if (sys_fcntl(new_fd, F_GETFD, 0) != -EBADF) {
 				ql_debug("new fd %d already in use (old fd:%d)\n", new_fd,
 						old_fd);
-				return -1;
+				retno = -EEXIST;
+				return retno;
 			}
 		}
-		if (sys_dup2(old_fd, new_fd) < 0) {
+		retno = sys_dup2(old_fd, new_fd);
+		if (retno < 0) {
 			ql_debug("Fail to dup fd %d as %d\n", old_fd, new_fd);
-			return -1;
+			return retno;
 		}
-		if (sys_close(old_fd)) {
+
+		retno = sys_close(old_fd);
+		if (retno) {
 			ql_debug("Fail to close old fd %d\n", old_fd);
-			return -1;
+			return retno;
 		}
+
 		if (opt) {
-			if (sys_fcntl(new_fd, F_SETFD, opt->flags)) {
+			retno = sys_fcntl(new_fd, F_SETFD, opt->flags);
+			if (retno) {
 				ql_debug("Fail to set fd(%d) flags(%d)\n", new_fd, opt->flags);
-				return -1;
+				return retno;
 			}
 		}
 	}
@@ -110,17 +116,16 @@ static int ql_restore_epoll_add(struct epoll_arg *epoll_arg)
 	struct epoll_event event;
 	int i;
 	int fd = epoll_arg->epoll_fd;
-	int ret;
 
 	ql_debug("Restore epoll fd %d\n", fd);
 	for (i = 0; i < epoll_arg->nr_fd; i++) {
 		event.events = epoll_arg->p[i].event;
 		event.data.u64 = epoll_arg->p[i].event_data;
-		ret = sys_epoll_ctl(fd, EPOLL_CTL_ADD, epoll_arg->p[i].fd, &event);
-		if (ret) {
+		retno = sys_epoll_ctl(fd, EPOLL_CTL_ADD, epoll_arg->p[i].fd, &event);
+		if (retno) {
 			pr_err("Can't add eventpoll of %d on %d(%d)\n", fd,
-					epoll_arg->p[i].fd, ret);
-			return -1;
+					epoll_arg->p[i].fd, retno);
+			return retno;
 		}
 	}
 	return 0;
@@ -130,17 +135,15 @@ static int ql_restore_epoll_add(struct epoll_arg *epoll_arg)
 //FIXME: We assume that value of fds and args->fds are in order
 static int ql_restore_files(struct parasite_drain_fd *args)
 {
-	int ret, max_fd = 0, i;
+	int max_fd = 0, i;
 	int fds[PARASITE_MAX_FDS];
 	struct fd_opts opts[PARASITE_MAX_FDS];
 
-	ret = ql_daemon_reply_ack(QUICKLAKE_CMD_RESTORE_FILE, 0);
-	if (ret)
-		return ret;
+	if (ql_daemon_reply_ack(QUICKLAKE_CMD_RESTORE_FILE, 0))
+		return retno;
 
-	ret = recv_fds(tsock, fds, args->nr_fds, opts);
-	if (ret)
-		return ret;
+	if (recv_fds(tsock, fds, args->nr_fds, opts))
+		return retno;
 
 	/* redirect tsock and log fd which may clash with args->fds */
 	max_fd = args->fds[args->nr_fds - 1] > fds[args->nr_fds - 1] ?
@@ -150,13 +153,13 @@ static int ql_restore_files(struct parasite_drain_fd *args)
 
 	if (ql_reopen_fd_as(tsock, max_fd + 1, NULL, false)) {
 		pr_err("Can't dup tsock %d->%d\n", tsock, max_fd + 1);
-		return -1;
+		return retno;
 	}
 	tsock = max_fd + 1;
 
 	if (ql_reopen_fd_as(logfd, max_fd + 2, NULL, false)) {
 		pr_err("Can't dup logfd %d->%d\n", logfd, max_fd + 2);
-		return -1;
+		return retno;
 	}
 	logfd = max_fd + 2;
 	log_set_fd(logfd);
@@ -165,14 +168,14 @@ static int ql_restore_files(struct parasite_drain_fd *args)
 	for (i = 0; i < args->nr_fds; i++) {
 		if (args->fds[i] <= fds[i]) {
 			if (ql_reopen_fd_as(fds[i], args->fds[i], opts + i, false))
-				return -1;
+				return retno;
 		} else
 			break;
 	}
 	for (i = args->nr_fds - 1; i >= 0; --i) {
 		if (args->fds[i] > fds[i]) {
 			if (ql_reopen_fd_as(fds[i], args->fds[i], opts + i, false))
-				return -1;
+				return retno;
 		} else
 			break;
 	}
@@ -249,7 +252,6 @@ static noinline int ql_unmap_blob(void *data)
 static noinline __used int ql_init_daemon(void *data)
 {
 	struct parasite_init_args *args = data;
-	int ret;
 
 	args->sigreturn_addr = fini_sigreturn;
 	sigframe = args->sigframe;
@@ -257,12 +259,13 @@ static noinline __used int ql_init_daemon(void *data)
 	tsock = sys_socket(PF_UNIX, SOCK_SEQPACKET, 0);
 	if (tsock < 0) {
 		pr_err("Can't create socket: %d\n", tsock);
+		retno = tsock;
 		goto err;
 	}
 
-	ret = sys_connect(tsock, (struct sockaddr *)&args->h_addr, 
+	retno = sys_connect(tsock, (struct sockaddr *)&args->h_addr, 
 			args->h_addr_len);
-	if (ret < 0) {
+	if (retno < 0) {
 		pr_err("Can't connect the control socket\n");
 		goto err;
 	}
@@ -271,7 +274,7 @@ static noinline __used int ql_init_daemon(void *data)
 	if (logfd >= 0) {
 		log_set_fd(logfd);
 		log_set_loglevel(args->log_level);
-		ret = 0;
+		retno = 0;
 	} else
 		goto err;
 
@@ -281,7 +284,7 @@ err:
 	fini();
 	BUG();
 
-	return -1;
+	return retno;
 }
 
 #ifndef quicklake_entry
