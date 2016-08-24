@@ -1,7 +1,9 @@
 #include <string.h>
 #include <errno.h>
+#include <sys/epoll.h>
 
 #include "parasite.h"
+#include "eventpoll.h"
 #include "syscall.h"
 #include "log.h"
 #include "asm/parasite.h"
@@ -103,9 +105,27 @@ static int ql_reopen_fd_as(int old_fd, int new_fd, struct fd_opts *opt,
 	return 0;
 }
 
+static int ql_restore_epoll_add(struct epoll_arg *epoll_arg)
+{
+	struct epoll_event event;
+	int i;
+	int fd = epoll_arg->epoll_fd;
+
+	ql_debug("Restore epoll fd %d\n", fd);
+	for (i = 0; i < epoll_arg->nr_fd; i++) {
+		event.events = epoll_arg->p[i].event;
+		event.data.u64 = epoll_arg->p[i].event_data;
+		if (sys_epoll_ctl(fd, EPOLL_CTL_ADD, epoll_arg->p[i].fd, &event)) {
+			pr_err("Can't add event of %d on %#08x\n", fd, i);
+			return -1;
+		}
+	}
+	return 0;
+}
+
 // restore eventpoll, sk-inet, sk-unix, timerfd, 'tty' after reopen
 //FIXME: We assume that value of fds and args->fds are in order
-int ql_restore_files(struct parasite_drain_fd *args)
+static int ql_restore_files(struct parasite_drain_fd *args)
 {
 	int ret, max_fd = 0, i;
 	int fds[PARASITE_MAX_FDS];
@@ -184,6 +204,9 @@ static noinline __used int noinline ql_daemon(void *args)
 			goto out;
 		case QUICKLAKE_CMD_RESTORE_FILE:
 			ret = ql_restore_files(args);
+			break;
+		case QUICKLAKE_CMD_EPOLL_ADD:
+			ret = ql_restore_epoll_add(args);
 			break;
 		default:
 			pr_err("Unknown command in parasite daemon thread leader: %d\n", m.cmd);

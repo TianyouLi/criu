@@ -63,8 +63,10 @@ static struct parasite_ctl *parasite_seized(pid_t pid, struct pstree_item *item,
 	ctl = parasite_prep_ctl(pid, vma_area_list);
 	if (!ctl)
 		return NULL;
-	//TODO: check argument size
+	/* check size of dfds */
 	parasite_ensure_args_size(drain_fds_size(&(qli(item)->dfds)));
+	/* check size of epoll */
+	parasite_ensure_args_size(parasite_epoll_size(qli(item)->nr_max_epolls));
 
 	ctl->args_size = round_up(parasite_args_size, PAGE_SIZE);
 	ctl->pid.real = pid;
@@ -92,7 +94,6 @@ static struct parasite_ctl *parasite_seized(pid_t pid, struct pstree_item *item,
 			__export_parasite_head_start);
 	ctl->addr_cmd = ql_sym(ctl->local_map, __export_parasite_cmd);
 	ctl->addr_args = ql_sym(ctl->local_map, __export_parasite_args);
-
 
 	p = pie_size(quicklake_blob) + ctl->args_size;
 
@@ -142,6 +143,8 @@ static int ql_open_fdinfos(struct pstree_item *pi, struct list_head *list)
 
 static int ql_prepare_files(struct pstree_item *pi)
 {
+	struct fdinfo_list_entry *fle;
+
 	if (rsti(pi)->fdt && rsti(pi)->fdt->pid != pi->pid.virt) {
 		pr_info("File descriptor table is shared with %d\n", rsti(pi)->fdt->pid);
 		goto stop;
@@ -153,8 +156,44 @@ static int ql_prepare_files(struct pstree_item *pi)
 	if (ql_open_fdinfos(pi, &rsti(pi)->eventpoll))
 		return -1;
 
+	list_for_each_entry(fle, &rsti(pi)->eventpoll, ps_list) {
+		int count = eventpoll_count_tfds(fle->desc);
+		qli(pi)->nr_max_epolls = qli(pi)->nr_max_epolls < count ? count :
+				qli(pi)->nr_max_epolls;
+	}
 	//TODO: handle tty
 stop:
+	return 0;
+}
+
+static int parasite_add_epoll(struct parasite_ctl *ctl, struct pstree_item *pi)
+{
+	struct fdinfo_list_entry *fle;
+	struct epoll_arg *epoll_arg;
+	int epoll_size;
+
+	list_for_each_entry(fle, &rsti(pi)->eventpoll, ps_list) {
+		int nr_epoll_fd = eventpoll_count_tfds(fle->desc);
+
+		if (!nr_epoll_fd)
+			continue;
+
+		epoll_size = parasite_epoll_size(nr_epoll_fd);
+		epoll_arg = parasite_args_s(ctl, epoll_size);
+		epoll_arg->epoll_fd = fle->fe->fd;
+		epoll_arg->nr_fd = nr_epoll_fd;
+		eventpoll_collect_args(fle->desc, epoll_arg);
+
+		if (__parasite_execute_daemon(QUICKLAKE_CMD_EPOLL_ADD, ctl)) {
+			pr_err("Can't epoll %d add tfd", epoll_arg->epoll_fd);
+			return -1;
+		}
+
+		if (__parasite_wait_daemon_ack(QUICKLAKE_CMD_EPOLL_ADD, ctl)) {
+			pr_err("Can't wait epoll ack %d\n", epoll_arg->epoll_fd);
+			return -1;
+		}
+	}
 	return 0;
 }
 
@@ -190,6 +229,9 @@ static int parasite_send_fds(struct parasite_ctl *ctl, struct pstree_item *pi)
 	}
 
 	list_for_each_entry(fle, &rsti(pi)->fds, ps_list) {
+		new_fds[nr_new_fds++] = fle->desc->new_fd;
+	}
+	list_for_each_entry(fle, &rsti(pi)->eventpoll, ps_list) {
 		new_fds[nr_new_fds++] = fle->desc->new_fd;
 	}
 
@@ -259,10 +301,15 @@ static int ql_restore_one_task(struct pstree_item *item)
 		goto stop;
 	}
 
-	//TODO: restore ...
 	ret = parasite_send_fds(parasite_ctl, item);
 	if (ret) {
 		pr_err("Can't send fds of pid(%d) with ql parasite\n", pid);
+		goto stop;
+	}
+
+	ret = parasite_add_epoll(parasite_ctl, item);
+	if (ret) {
+		pr_err("Can' t add epolls of pid(%d)\n", pid);
 		goto stop;
 	}
 
@@ -424,7 +471,6 @@ int restore_ql_task()
 	ret = ql_prepare_namespace();
 	if (ret)
 		goto err;
-
 
 	if (ql_prepare_shared() < 0) {
 		pr_err("Can't prepare shared info\n");

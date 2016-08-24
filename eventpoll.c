@@ -181,6 +181,45 @@ static int eventpoll_post_open(struct file_desc *d, int fd)
 	return 0;
 }
 
+void eventpoll_collect_args(struct file_desc *d, struct epoll_arg *arg)
+{
+	struct eventpoll_tfd_file_info *td_info;
+	struct eventpoll_file_info *info;
+	int i;
+
+	info = container_of(d, struct eventpoll_file_info, d);
+
+	for (i = 0; i < info->efe->n_tfd; i++) {
+		arg->p[i].fd = info->efe->id;
+		arg->p[i].event = info->efe->tfd[i]->events;
+		arg->p[i].event_data = info->efe->tfd[i]->data;
+	}
+
+	list_for_each_entry(td_info, &eventpoll_tfds, list) {
+		if (td_info->tdefe->id == info->efe->id) {
+			arg->p[i].fd = info->efe->id;
+			arg->p[i].event = td_info->tdefe->events;
+			arg->p[i++].event_data = td_info->tdefe->data;
+		}
+	}
+}
+
+int eventpoll_count_tfds(struct file_desc *d)
+{
+	struct eventpoll_file_info *info;
+	struct eventpoll_tfd_file_info *td_info;
+	int count = 0;
+
+	info = container_of(d, struct eventpoll_file_info, d);
+	count += info->efe->n_tfd;
+
+	list_for_each_entry(td_info, &eventpoll_tfds, list) {
+		count += td_info->tdefe->id == info->efe->id;
+	}
+	return count;
+
+}
+
 static void eventpoll_collect_fd(struct file_desc *d,
 		struct fdinfo_list_entry *fle, struct rst_info *ri)
 {

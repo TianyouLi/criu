@@ -52,6 +52,7 @@ struct ql_info {
 	struct dmp_info dmp_info;
 	struct rst_info rst_info;
 	struct parasite_drain_fd dfds;
+	int nr_max_epolls;
 };
 
 extern bool is_quicklake_task;

@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <signal.h>
+#include <sys/epoll.h>
 
 #include "asm/page.h"
 #include "asm/bitops.h"
