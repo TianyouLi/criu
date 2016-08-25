@@ -4,6 +4,7 @@
 
 #include "parasite.h"
 #include "eventpoll.h"
+#include "timerfd.h"
 #include "syscall.h"
 #include "log.h"
 #include "asm/parasite.h"
@@ -111,6 +112,66 @@ static int ql_reopen_fd_as(int old_fd, int new_fd, struct fd_opts *opt,
 	return 0;
 }
 
+static int ql_restore_start_timerfd(struct parasite_timerfd_arg *arg)
+{
+	int i;
+	struct restore_timerfd *tf;
+
+	ql_debug("Restore timerfd\n");
+	for (i = 0; i < arg->nr_timerfd; i++) {
+		tf = arg->timerfd + i;
+		retno = sys_fcntl(tf->fd, F_SETFL, tf->own->flags);
+		if (retno < 0)
+			return retno;
+		if (tf->own->signum) {
+			retno = sys_fcntl(tf->fd, F_SETSIG, tf->own->signum);
+			if (retno) {
+				ql_debug("Can't set signal\n");
+				return retno;
+			}
+		}
+		if (tf->own->pid) {
+			struct f_owner_ex owner;
+			owner.type = tf->own->pid_type;
+			owner.pid = tf->own->pid;
+			retno = sys_fcntl(tf->fd, F_SETOWN_EX, (long) &owner);
+			if (retno) {
+				ql_debug("Can't setup %d file owner\n", tf->fd);
+			}
+		}
+
+		if (tf->settime_flags & TFD_TIMER_ABSTIME) {
+			struct timespec ts = { };
+
+			retno = sys_clock_gettime(tf->clockid, &ts);
+			if (retno) {
+				ql_debug("Can't get current time\n");
+				return retno;
+			}
+
+			tf->val.it_value.tv_sec += (time_t) ts.tv_sec;
+			ql_debug("Ajust clock %d it_value(%llu, %llu) -> (%llu, %llu)\n",
+					tf->id, (unsigned long long) ts.tv_sec,
+					(unsigned long long) ts.tv_nsec,
+					(unsigned long long) tf->val.it_value.tv_sec,
+					(unsigned long long) tf->val.it_value.tv_nsec);
+		}
+
+		retno = sys_timerfd_settime(tf->fd, tf->settime_flags, &tf->val, NULL);
+		if (retno) {
+			ql_debug("Can't set time of timerfd %d\n", tf->fd);
+			return retno;
+		}
+		if (tf->ticks) {
+			retno = sys_ioctl(tf->fd, TFD_IOC_SET_TICKS,
+					(unsigned long) &tf->ticks);
+			if (retno)
+				return retno;
+		}
+	}
+	return 0;
+}
+
 static int ql_restore_epoll_add(struct epoll_arg *epoll_arg)
 {
 	struct epoll_event event;
@@ -213,6 +274,9 @@ static noinline __used int noinline ql_daemon(void *args)
 			break;
 		case QUICKLAKE_CMD_EPOLL_ADD:
 			ret = ql_restore_epoll_add(args);
+			break;
+		case QUICKLAKE_CMD_START_TIMERFD:
+			ret = ql_restore_start_timerfd(args);
 			break;
 		default:
 			pr_err("Unknown command in parasite daemon thread leader: %d\n", m.cmd);

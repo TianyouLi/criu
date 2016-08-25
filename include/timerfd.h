@@ -15,6 +15,19 @@ struct restore_timerfd {
 	int			settime_flags;
 	unsigned long		ticks;
 	struct itimerspec	val;
+	struct {
+		int uid;
+		int euid;
+		int signum;
+		int pid_type;
+		int pid;
+		int flags;
+	} own[0];
+};
+
+struct parasite_timerfd_arg {
+	int nr_timerfd;
+	struct restore_timerfd timerfd[0];
 };
 
 extern const struct fdtype_ops timerfd_dump_ops;
@@ -27,6 +40,14 @@ extern unsigned int rst_timerfd_nr;
 
 extern int check_timerfd(void);
 extern int is_timerfd_link(char *link);
+extern void ql_add_timerfd_info(struct pstree_item *pi, struct file_desc *d,
+		int tfd);
+extern void ql_collect_timerfd_info(struct pstree_item *pi,
+		struct parasite_timerfd_arg *arg);
+
+#define parasite_timerfd_size(n)	((n * (sizeof(struct restore_timerfd) + \
+				sizeof(((struct restore_timerfd *) NULL)->own[0]))) +\
+				sizeof(struct parasite_timerfd_arg))
 
 #ifndef TFD_TIMER_ABSTIME
 # define TFD_TIMER_ABSTIME	(1 << 0)

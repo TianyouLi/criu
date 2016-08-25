@@ -144,6 +144,45 @@ int rst_timerfd_prep(void)
 	return 0;
 }
 
+void ql_add_timerfd_info(struct pstree_item *pi, struct file_desc *d, int tfd)
+{
+	struct timerfd_info *info = container_of(d, struct timerfd_info, d);
+	info->t_fd = tfd;
+	list_add_tail(&info->rlist, &qli(pi)->timerfd_list);
+	qli(pi)->nr_timerfd++;
+}
+
+void ql_collect_timerfd_info(struct pstree_item *pi,
+		struct parasite_timerfd_arg *arg)
+{
+	struct timerfd_info *info;
+	TimerfdEntry *entry;
+	int i = 0;
+	struct restore_timerfd *tf = arg->timerfd;
+
+	list_for_each_entry(info, &qli(pi)->timerfd_list, rlist) {
+		entry = info->tfe;
+		tf[i].id = entry->id;
+		tf[i].fd = info->t_fd;
+		tf[i].clockid = entry->clockid;
+		tf[i].ticks = (unsigned long) entry->ticks;
+		tf[i].settime_flags = entry->settime_flags;
+		tf[i].val.it_interval.tv_sec = (time_t) entry->isec;
+		tf[i].val.it_interval.tv_nsec = (long) entry->insec;
+		tf[i].val.it_value.tv_sec = (time_t) entry->vsec;
+		tf[i].val.it_value.tv_nsec = (long) entry->vnsec;
+		tf[i].own->signum = entry->fown->signum;
+		tf[i].own->uid = entry->fown->uid;
+		tf[i].own->euid = entry->fown->euid;
+		tf[i].own->pid_type = entry->fown->pid_type;
+		tf[i].own->pid = entry->fown->pid;
+		tf[i].own->flags = entry->flags;
+		i++;
+	}
+	BUG_ON(i != qli(pi)->nr_timerfd);
+	arg->nr_timerfd = i;
+}
+
 static int timerfd_open(struct file_desc *d)
 {
 	struct timerfd_info *info;

@@ -67,6 +67,8 @@ static struct parasite_ctl *parasite_seized(pid_t pid, struct pstree_item *item,
 	parasite_ensure_args_size(drain_fds_size(&(qli(item)->dfds)));
 	/* check size of epoll */
 	parasite_ensure_args_size(parasite_epoll_size(qli(item)->nr_max_epolls));
+	/* check size of timerfd */
+	parasite_ensure_args_size(parasite_timerfd_size(qli(item)->nr_timerfd));
 
 	ctl->args_size = round_up(parasite_args_size, PAGE_SIZE);
 	ctl->pid.real = pid;
@@ -137,6 +139,9 @@ static int ql_open_fdinfos(struct pstree_item *pi, struct list_head *list)
 		if (fd < 0)
 			return -1;
 		d->new_fd = fd;
+		if (d->ops->type == FD_TYPES__TIMERFD) {
+			ql_add_timerfd_info(pi, d, fle->fe->fd);
+		}
 	}
 	return 0;
 }
@@ -144,6 +149,7 @@ static int ql_open_fdinfos(struct pstree_item *pi, struct list_head *list)
 static int ql_prepare_files(struct pstree_item *pi)
 {
 	struct fdinfo_list_entry *fle;
+	INIT_LIST_HEAD(&qli(pi)->timerfd_list);
 
 	if (rsti(pi)->fdt && rsti(pi)->fdt->pid != pi->pid.virt) {
 		pr_info("File descriptor table is shared with %d\n", rsti(pi)->fdt->pid);
@@ -166,6 +172,34 @@ stop:
 	return 0;
 }
 
+static int parasite_start_timerfd(struct parasite_ctl *ctl,
+		struct pstree_item *pi)
+{
+	int tf_size, ret;
+	void *tf;
+
+	if (!qli(pi)->nr_timerfd)
+		return 0;
+
+	tf_size = parasite_timerfd_size(qli(pi)->nr_timerfd);
+	tf = parasite_args_s(ctl, tf_size);
+
+	ql_collect_timerfd_info(pi, tf);
+
+	ret = __parasite_execute_daemon(QUICKLAKE_CMD_START_TIMERFD, ctl);
+	if (ret) {
+		pr_err("Can't start timerfd %d\n", ret);
+		return ret;
+	}
+
+	ret = __parasite_wait_daemon_ack(QUICKLAKE_CMD_START_TIMERFD, ctl);
+	if (ret) {
+		pr_err("Can't wait ack of start timerfd\n");
+		return ret;
+	}
+	return 0;
+}
+
 static int parasite_add_epoll(struct parasite_ctl *ctl, struct pstree_item *pi)
 {
 	struct fdinfo_list_entry *fle;
@@ -173,6 +207,7 @@ static int parasite_add_epoll(struct parasite_ctl *ctl, struct pstree_item *pi)
 	int epoll_size;
 	int ret;
 
+	//TODO:check file master
 	list_for_each_entry(fle, &rsti(pi)->eventpoll, ps_list) {
 		int nr_epoll_fd = eventpoll_count_tfds(fle->desc);
 
@@ -314,6 +349,12 @@ static int ql_restore_one_task(struct pstree_item *item)
 	ret = parasite_add_epoll(parasite_ctl, item);
 	if (ret) {
 		pr_err("Can' t add epolls of pid(%d): %s\n", pid, strerror(-ret));
+		goto stop;
+	}
+
+	ret = parasite_start_timerfd(parasite_ctl, item);
+	if (ret) {
+		pr_err("Can't start %d of timerfd: %s\n", pid, strerror(-ret));
 		goto stop;
 	}
 
