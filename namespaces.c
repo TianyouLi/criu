@@ -982,7 +982,7 @@ int userns_call(uns_call_t call, int flags,
 		return -1;
 	}
 
-	if (!usernsd_pid)
+	if (!usernsd_pid || is_quicklake_task)
 		return call(arg, fd);
 
 	sk = get_service_fd(USERNSD_SK);

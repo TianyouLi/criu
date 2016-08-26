@@ -185,6 +185,8 @@ struct pstree_item *__alloc_pstree_item(int type)
 		if (!item)
 			return NULL;
 		vm_area_list_init(&rsti(item)->vmas);
+		INIT_LIST_HEAD(&qli(item)->sk_tcp_list);
+		INIT_LIST_HEAD(&qli(item)->timerfd_list);
 		break;
 	}
 

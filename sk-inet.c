@@ -20,6 +20,7 @@
 #include "util.h"
 #include "sockets.h"
 #include "sk-inet.h"
+#include "pstree.h"
 
 #define PB_ALEN_INET	1
 #define PB_ALEN_INET6	4
@@ -381,11 +382,6 @@ static struct file_desc_ops inet_desc_ops = {
 	.post_open = post_open_inet_sk,
 };
 
-static inline int tcp_connection(InetSkEntry *ie)
-{
-	return (ie->proto == IPPROTO_TCP) && (ie->state == TCP_ESTABLISHED);
-}
-
 static int collect_one_inetsk(void *o, ProtobufCMessage *base)
 {
 	struct inet_sk_info *ii = o;
@@ -467,6 +463,17 @@ static int post_open_inet_sk(struct file_desc *d, int sk)
 		return -1;
 
 	return 0;
+}
+
+void ql_add_sk_tcp_info(struct pstree_item *pi, struct file_desc *d, int sk)
+{
+	struct inet_sk_info *ii = container_of(d, struct inet_sk_info, d);
+
+	if (tcp_connection(ii->ie)) {
+		BUG_ON(ii->sk_fd != -1);
+		ii->sk_fd = sk;
+		list_add_tail(&ii->rlist, &qli(pi)->sk_tcp_list);
+	}
 }
 
 static int open_inet_sk(struct file_desc *d)

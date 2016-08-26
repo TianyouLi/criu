@@ -22,6 +22,7 @@
 #include "cr-show.h"
 #include "kerndat.h"
 #include "rst-malloc.h"
+#include "pstree.h"
 
 #include "protobuf.h"
 #include "protobuf/tcp-stream.pb-c.h"
@@ -682,6 +683,20 @@ int rst_tcp_socks_prep(void)
 	}
 
 	return 0;
+}
+
+void ql_collect_sk_tcp(struct pstree_item *pi, struct parasite_sk_tcp_arg *arg)
+{
+	struct inet_sk_info *ii;
+	struct rst_tcp_sock *tcp = arg->sk_tcp;
+
+	list_for_each_entry(ii, &qli(pi)->sk_tcp_list, rlist) {
+		BUG_ON(ii->sk_fd == -1);
+		tcp->sk = ii->sk_fd;
+		tcp->reuseaddr = ii->ie->opts->reuseaddr;
+		tcp++;
+	}
+	arg->nr_sk_tcp = tcp - arg->sk_tcp;
 }
 
 int restore_one_tcp(int fd, struct inet_sk_info *ii)

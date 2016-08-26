@@ -82,4 +82,19 @@ struct rst_tcp_sock {
 	bool	reuseaddr;
 };
 
+struct parasite_sk_tcp_arg {
+	int nr_sk_tcp;
+	struct rst_tcp_sock sk_tcp[0];
+};
+
+#define parasite_sk_tcp_size(n)	(sizeof(struct parasite_sk_tcp_arg) +\
+				n * sizeof(struct rst_tcp_sock))
+
+extern void ql_collect_sk_tcp(struct pstree_item *,
+		struct parasite_sk_tcp_arg *);
+extern void ql_add_sk_tcp_info(struct pstree_item *pi,
+		struct file_desc *d, int sk);
+#define tcp_connection(ie)	((ie->proto == IPPROTO_TCP) &&	\
+		(ie->state == TCP_ESTABLISHED))
+
 #endif /* __CR_SK_INET_H__ */

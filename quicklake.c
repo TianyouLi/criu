@@ -69,6 +69,8 @@ static struct parasite_ctl *parasite_seized(pid_t pid, struct pstree_item *item,
 	parasite_ensure_args_size(parasite_epoll_size(qli(item)->nr_max_epolls));
 	/* check size of timerfd */
 	parasite_ensure_args_size(parasite_timerfd_size(qli(item)->nr_timerfd));
+	/* check sk tcp size */
+	parasite_ensure_args_size(parasite_sk_tcp_size(qli(item)->nr_sk_tcp));
 
 	ctl->args_size = round_up(parasite_args_size, PAGE_SIZE);
 	ctl->pid.real = pid;
@@ -141,6 +143,8 @@ static int ql_open_fdinfos(struct pstree_item *pi, struct list_head *list)
 		d->new_fd = fd;
 		if (d->ops->type == FD_TYPES__TIMERFD) {
 			ql_add_timerfd_info(pi, d, fle->fe->fd);
+		} else if (d->ops->type == FD_TYPES__INETSK) {
+			ql_add_sk_tcp_info(pi, d, fle->fe->fd);
 		}
 	}
 	return 0;
@@ -169,6 +173,63 @@ static int ql_prepare_files(struct pstree_item *pi)
 	}
 	//TODO: handle tty
 stop:
+	return 0;
+}
+
+static int ql_post_prepare_files(struct pstree_item *pi)
+{
+	struct fdinfo_list_entry *fle;
+
+	if (rsti(pi)->fdt && rsti(pi)->fdt->pid != pi->pid.virt)
+		return 0;
+
+	list_for_each_entry(fle, &rsti(pi)->fds, ps_list) {
+		struct file_desc *d = fle->desc;
+
+		if (fle != file_master(d))
+			continue;
+
+		if (d->ops->type == FD_TYPES__INETSK) {
+			struct inet_sk_info *ii = container_of(d, struct inet_sk_info, d);
+			int val;
+
+			if (tcp_connection(ii->ie))
+				continue;
+			if (ii->ie->opts->reuseaddr)
+				continue;
+			val = ii->ie->opts->reuseaddr;
+			if (restore_opt(d->new_fd, SOL_SOCKET, SO_REUSEADDR, &val))
+				return -1;
+		}
+	}
+	return 0;
+}
+
+static int parasite_repair_sk_tcp(struct parasite_ctl *ctl,
+		struct pstree_item *pi)
+{
+	int sk_size, ret;
+	void *sk_tcp;
+
+	if (!qli(pi)->nr_sk_tcp)
+		return 0;
+
+	sk_size = parasite_sk_tcp_size(qli(pi)->nr_sk_tcp);
+	sk_tcp = parasite_args_s(ctl, sk_size);
+
+	ql_collect_sk_tcp(pi, sk_tcp);
+
+	ret = __parasite_execute_daemon(QUICKLAKE_CMD_REPAIR_TCP, ctl);
+	if (ret) {
+		pr_err("Can't repair tcp %d\n", ret);
+		return ret;
+	}
+
+	ret = __parasite_wait_daemon_ack(QUICKLAKE_CMD_REPAIR_TCP, ctl);
+	if (ret) {
+		pr_err("Can't wait ack of repair tcp\n");
+		return ret;
+	}
 	return 0;
 }
 
@@ -288,6 +349,31 @@ err:
 	return ret;
 }
 
+static int ql_cure_parasite_task(struct pstree_item *item)
+{
+	struct parasite_ctl *ctl = qli(item)->parasite_ctl;
+	pid_t ori_real = item->pid.real;
+
+	if (parasite_stop_daemon(ctl)) {
+		pr_err("Can't stop daemon (pid: %d) from ql parasite\n",
+				item->pid.virt);
+		return -EPERM;
+	}
+
+	if (parasite_cure_seized(ctl)) {
+		pr_err("Can't cure (pid: %d) from ql parasite\n",
+				item->pid.virt);
+		return -EPERM;
+	}
+
+	item->pid.real = item->pid.virt;
+	BUG_ON(item->state > TASK_STOPPED);
+	unseize_task_and_threads(item, item->state);
+	item->pid.real = ori_real;
+
+	return 0;
+}
+
 /* Restore task in quicklake state */
 static int ql_restore_one_task(struct pstree_item *item)
 {
@@ -339,6 +425,7 @@ static int ql_restore_one_task(struct pstree_item *item)
 		goto stop;
 	}
 
+	qli(item)->parasite_ctl = parasite_ctl;
 	ret = parasite_send_fds(parasite_ctl, item);
 	if (ret) {
 		pr_err("Can't send fds of pid(%d) with ql parasite: %s\n", pid,
@@ -358,20 +445,13 @@ static int ql_restore_one_task(struct pstree_item *item)
 		goto stop;
 	}
 
+	ret = parasite_repair_sk_tcp(parasite_ctl, item);
+	if (ret) {
+		pr_err("Can't repair tcp of pid %d: %s\n", pid, strerror(-ret));
+		goto stop;
+	}
+
 stop:
-	if (parasite_stop_daemon(parasite_ctl)) {
-		pr_err("Can't stop daemon (pid: %d) from ql parasite\n", pid);
-		ret = -EPERM;
-		goto err;
-	}
-
-	if (parasite_cure_seized(parasite_ctl)) {
-		ret = -EPERM;
-		pr_err("Can't cure (pid: %d) from ql parasite\n", pid);
-		goto err;
-	}
-
-err:
 	free_mappings(&vmas);
 	return ret;
 }
@@ -506,16 +586,13 @@ int restore_ql_task()
 	struct pstree_item *item;
 
 	ret = ql_read_pstree_image();
-	if (ret < 0)
-		goto err;
+	if (ret < 0) goto err;
 
 	ret = prepare_pstree_kobj_ids();
-	if (ret)
-		goto err;
+	if (ret) goto err;
 
 	ret = ql_prepare_namespace();
-	if (ret)
-		goto err;
+	if (ret) goto err;
 
 	if (ql_prepare_shared() < 0) {
 		pr_err("Can't prepare shared info\n");
@@ -524,31 +601,35 @@ int restore_ql_task()
 
 	/* Create socket per process other than ns */
 	ret = prepare_socket();
-	if (ret)
-		goto err;
+	if (ret) goto err;
 
 	ret = freeze_pstree();
-	if (ret)
-		goto err;
+	if (ret) goto err;
 
+	/* Open files */
 	for_each_pstree_item(item) {
 		ret = ql_prepare_files(item);
-		if (ret)
-			goto err;
+		if (ret) goto err;
 	}
 
+	/* Post-open */
+	//FIXME: may move this part to ql_prepare_files
+	for_each_pstree_item(item) {
+		ret = ql_post_prepare_files(item);
+		if (ret) goto err;
+	}
+
+	/* Send fds to pstree */
 	for_each_pstree_item(item) {
 		ret = ql_restore_one_task(item);
-		if (ret)
-			goto err;
+		if (ret) goto err;
 	}
 
+	network_unlock();
+
 	for_each_pstree_item(item) {
-		pid_t ori_real = item->pid.real;
-		item->pid.real = item->pid.virt;
-		BUG_ON(item->state > TASK_STOPPED);
-		unseize_task_and_threads(item, item->state);
-		item->pid.real = ori_real;
+		ret = ql_cure_parasite_task(item);
+		if (ret) goto err;
 	}
 	pr_info("Restore quicklake task successfully!!!\n");
 err:

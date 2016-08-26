@@ -55,6 +55,9 @@ struct ql_info {
 	int nr_max_epolls;
 	int nr_timerfd;
 	struct list_head timerfd_list;
+	int nr_sk_tcp;
+	struct list_head sk_tcp_list;
+	struct parasite_ctl *parasite_ctl;
 };
 
 extern bool is_quicklake_task;

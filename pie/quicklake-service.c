@@ -7,6 +7,7 @@
 #include "timerfd.h"
 #include "syscall.h"
 #include "log.h"
+#include "sk-inet.h"
 #include "asm/parasite.h"
 #include "asm/restorer.h"
 
@@ -192,7 +193,24 @@ static int ql_restore_epoll_add(struct epoll_arg *epoll_arg)
 	return 0;
 }
 
-// restore eventpoll, sk-inet, sk-unix, timerfd, 'tty' after reopen
+static int ql_repair_tcp(struct parasite_sk_tcp_arg *arg)
+{
+	int i;
+	for (i = 0; i < arg->nr_sk_tcp; i++) {
+		int aux = arg->sk_tcp[i].reuseaddr;
+		int sk = arg->sk_tcp[i].sk;
+		ql_debug("Turning repair off for %d (reuse %d)\n", sk, aux);
+		tcp_repair_off(sk);
+		retno = sys_setsockopt(sk, SOL_SOCKET, SO_REUSEADDR, &aux,
+				sizeof(aux));
+		if (retno < 0) {
+			ql_debug("Fail to restore of SO_REUSEADDR on socket %d\n", retno);
+		}
+	}
+	return 0;
+}
+
+// restore sk-inet, sk-unix, 'tty' after reopen
 //FIXME: We assume that value of fds and args->fds are in order
 static int ql_restore_files(struct parasite_drain_fd *args)
 {
@@ -277,6 +295,9 @@ static noinline __used int noinline ql_daemon(void *args)
 			break;
 		case QUICKLAKE_CMD_START_TIMERFD:
 			ret = ql_restore_start_timerfd(args);
+			break;
+		case QUICKLAKE_CMD_REPAIR_TCP:
+			ret = ql_repair_tcp(args);
 			break;
 		default:
 			pr_err("Unknown command in parasite daemon thread leader: %d\n", m.cmd);
