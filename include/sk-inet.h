@@ -47,6 +47,7 @@ struct inet_sk_info {
 	 */
 	int sk_fd;
 	struct list_head rlist;
+	struct list_head ql_tcp_list;
 };
 
 extern int inet_bind(int sk, struct inet_sk_info *);
