@@ -690,7 +690,7 @@ void ql_collect_sk_tcp(struct pstree_item *pi, struct parasite_sk_tcp_arg *arg)
 	struct inet_sk_info *ii;
 	struct rst_tcp_sock *tcp = arg->sk_tcp;
 
-	list_for_each_entry(ii, &qli(pi)->sk_tcp_list, rlist) {
+	list_for_each_entry(ii, &qli(pi)->sk_tcp_list, ql_tcp_list) {
 		BUG_ON(ii->sk_fd == -1);
 		tcp->sk = ii->sk_fd;
 		tcp->reuseaddr = ii->ie->opts->reuseaddr;

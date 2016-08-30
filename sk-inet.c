@@ -473,6 +473,7 @@ void ql_add_sk_tcp_info(struct pstree_item *pi, struct file_desc *d, int sk)
 		BUG_ON(ii->sk_fd != -1);
 		ii->sk_fd = sk;
 		list_add_tail(&ii->ql_tcp_list, &qli(pi)->sk_tcp_list);
+		qli(pi)->nr_sk_tcp++;
 	}
 }
 
