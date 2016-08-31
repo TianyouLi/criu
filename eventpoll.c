@@ -40,6 +40,8 @@ struct eventpoll_tfd_file_info {
 
 static LIST_HEAD(eventpoll_tfds);
 
+extern bool is_quicklake_task;
+
 /* Checks if file descriptor @lfd is eventfd */
 int is_eventpoll_link(char *link)
 {
@@ -162,6 +164,8 @@ static int eventpoll_post_open(struct file_desc *d, int fd)
 	struct eventpoll_file_info *info;
 	int i;
 
+	if (is_quicklake_task)
+		return 0;
 	info = container_of(d, struct eventpoll_file_info, d);
 
 	for (i = 0; i < info->efe->n_tfd; i++) {

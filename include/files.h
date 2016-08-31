@@ -177,5 +177,6 @@ extern int inherit_fd_resolve_clash(int fd);
 extern int inherit_fd_fini(void);
 
 extern bool inherited_fd(struct file_desc *, int *fdp);
+extern int post_open_fd(int pid, struct fdinfo_list_entry *fle);
 
 #endif /* __CR_FILES_H__ */

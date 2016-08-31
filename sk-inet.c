@@ -446,9 +446,11 @@ static int post_open_inet_sk(struct file_desc *d, int sk)
 	 * after unlocking connections.
 	 */
 	if (tcp_connection(ii->ie)) {
-		pr_debug("Schedule %d socket for repair off\n", sk);
-		BUG_ON(ii->sk_fd != -1);
-		ii->sk_fd = sk;
+		if (!is_quicklake_task) {
+			pr_debug("Schedule %d socket for repair off\n", sk);
+			BUG_ON(ii->sk_fd != -1);
+			ii->sk_fd = sk;
+		}
 		return 0;
 	}
 
@@ -456,7 +458,8 @@ static int post_open_inet_sk(struct file_desc *d, int sk)
 	if (ii->ie->opts->reuseaddr)
 		return 0;
 
-	futex_wait_until(&ii->port->users, 0);
+	if (!is_quicklake_task)
+		futex_wait_until(&ii->port->users, 0);
 
 	val = ii->ie->opts->reuseaddr;
 	if (restore_opt(sk, SOL_SOCKET, SO_REUSEADDR, &val))

@@ -761,7 +761,6 @@ struct fd_open_state {
 static int open_transport_fd(int pid, struct fdinfo_list_entry *fle);
 static int open_fd(int pid, struct fdinfo_list_entry *fle);
 static int receive_fd(int pid, struct fdinfo_list_entry *fle);
-static int post_open_fd(int pid, struct fdinfo_list_entry *fle);
 
 static struct fd_open_state states[] = {
 	{ "prepare",		open_transport_fd,	true,},
@@ -885,7 +884,7 @@ static int send_fd_to_self(int fd, struct fdinfo_list_entry *fle, int *sock)
 	return 0;
 }
 
-static int post_open_fd(int pid, struct fdinfo_list_entry *fle)
+int post_open_fd(int pid, struct fdinfo_list_entry *fle)
 {
 	struct file_desc *d = fle->desc;
 
@@ -898,9 +897,11 @@ static int post_open_fd(int pid, struct fdinfo_list_entry *fle)
 	if (fle != file_master(d))
 		return 0;
 
-	return d->ops->post_open(d, fle->fe->fd);
+	if (is_quicklake_task)
+		return d->ops->post_open(d, d->new_fd);
+	else
+		return d->ops->post_open(d, fle->fe->fd);
 }
-
 
 static int serve_out_fd(int pid, int fd, struct file_desc *d)
 {

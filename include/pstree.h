@@ -123,7 +123,7 @@ extern int pstree_alloc_cores(struct pstree_item *item);
 extern void pstree_free_cores(struct pstree_item *item);
 
 extern int collect_pstree_ids(void);
-extern int ql_read_pstree_image(void);
+extern int ql_read_pstree_image(int *);
 extern int prepare_pstree_kobj_ids(void);
 
 #endif /* __CR_PSTREE_H__ */

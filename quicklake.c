@@ -37,6 +37,14 @@
 #include "fsnotify.h"
 
 static unsigned long parasite_args_size = PARASITE_ARG_SIZE_MIN;
+static struct pstree_item **items = NULL;
+static int nr_item = 0;
+
+struct ql_restore_state {
+	char *name;
+	int (*restore_pstree_item) (struct pstree_item *pi);
+	bool no_loop;
+};
 
 int switch_ql_state(pid_t pid, int request)
 {
@@ -184,23 +192,8 @@ static int ql_post_prepare_files(struct pstree_item *pi)
 		return 0;
 
 	list_for_each_entry(fle, &rsti(pi)->fds, ps_list) {
-		struct file_desc *d = fle->desc;
-
-		if (fle != file_master(d))
-			continue;
-
-		if (d->ops->type == FD_TYPES__INETSK) {
-			struct inet_sk_info *ii = container_of(d, struct inet_sk_info, d);
-			int val;
-
-			if (tcp_connection(ii->ie))
-				continue;
-			if (ii->ie->opts->reuseaddr)
-				continue;
-			val = ii->ie->opts->reuseaddr;
-			if (restore_opt(d->new_fd, SOL_SOCKET, SO_REUSEADDR, &val))
-				return -1;
-		}
+		if (post_open_fd(pi->pid.virt, fle))
+			return -1;
 	}
 	return 0;
 }
@@ -456,46 +449,23 @@ stop:
 	return ret;
 }
 
-int freeze_pstree()
+static int ql_freeze_process(struct pstree_item *pi)
 {
-	struct pstree_item *pi;
-
-	pr_info("Wakeup and freeze the ql task\n");
-	for (pi = root_item; pi; pi = pstree_item_next(pi)) {
-		/*
-		 * TODO: the ql-task should stop after switching to
-		 * QL_RESTORE state and before we seize it.
-		 */
-		int ret = switch_ql_state(pi->pid.virt, QL_RESTORE);
-		ret = seize_catch_task(pi->pid.virt);
-		if (ret) {
-			pr_err("Fail to seize ql task: %d\n", pi->pid.virt);
-			return ret;
-		}
-		ret = seize_wait_task(pi->pid.virt, -1, &dmpi(pi)->pi_creds);
-		if (ret < 0)
-			return ret;
-		pi->state = ret;
-		pr_info("state:%d\n", ret);
+	/*
+	 * TODO: the ql-task should stop after switching to
+	 * QL_RESTORE state and before we seize it.
+	 */
+	int ret = switch_ql_state(pi->pid.virt, QL_RESTORE);
+	ret = seize_catch_task(pi->pid.virt);
+	if (ret) {
+		pr_err("Fail to seize ql task: %d\n", pi->pid.virt);
+		return ret;
 	}
-	return 0;
-}
-
-static int prepare_socket(void)
-{
-	struct pstree_item *pi;
-
-	/* Setup client socket for ql parasite communication */
-	for_each_pstree_item(pi) {
-		pr_info("Generate socket for pid: %d\n", pi->pid.virt);
-		dmpi(pi)->netns = xmalloc(sizeof(struct ns_id));
-		//FIXME: Is it ok that we don't init netns ?
-		dmpi(pi)->netns->net.seqsk = socket(PF_UNIX, SOCK_SEQPACKET, 0);
-		if (dmpi(pi)->netns->net.seqsk < 0) {
-			pr_err("Can't create seqsk for ql parasite\n");
-			return -1;
-		}
-	}
+	ret = seize_wait_task(pi->pid.virt, -1, &dmpi(pi)->pi_creds);
+	if (ret < 0)
+		return ret;
+	pi->state = ret;
+	pr_info("Freeze pid %d state %d\n", pi->pid.virt, pi->state);
 	return 0;
 }
 
@@ -524,10 +494,9 @@ static struct collect_image_info *cinfos[] = {
 	&file_locks_cinfo,
 };
 
-static int ql_prepare_shared(void)
+static int ql_collect_file_images(void)
 {
 	int i;
-	struct pstree_item *pi;
 
 	/* init file_desc_hash */
 	if (prepare_shared_fdinfo())
@@ -557,18 +526,33 @@ static int ql_prepare_shared(void)
 	if (collect_unix_sockets())
 		return -1;
 
-	for_each_pstree_item(pi) {
-		if (prepare_fd_pid(pi) < 0)
-			return -1;
+	return 0;
+}
+
+/* Collect open fd for each process and setup parasite socket */
+static int ql_collect_fds(struct pstree_item *pi)
+{
+	if (prepare_fd_pid(pi) < 0)
+		return -1;
+	pr_info("Generate socket for pid: %d\n", pi->pid.virt);
+	dmpi(pi)->netns = xmalloc(sizeof(struct ns_id));
+	//FIXME: Is it ok that we don't init netns ?
+	dmpi(pi)->netns->net.seqsk = socket(PF_UNIX, SOCK_SEQPACKET, 0);
+	if (dmpi(pi)->netns->net.seqsk < 0) {
+		pr_err("Can't create seqsk for ql parasite\n");
+		return -1;
 	}
+	return 0;
+}
 
+/* determine which process is responsible for creating fd-pairs */
+static int ql_resolve_file_master(struct pstree_item *pi)
+{
+	BUG_ON(pi);
 	mark_pipe_master();
-
-	//TODO: Setup tty
-
+	//TODO: how to handle tty
 	if (resolve_unix_peers())
 		return -1;
-
 	return 0;
 }
 
@@ -580,12 +564,53 @@ static int ql_prepare_namespace(void)
 	return 0;
 }
 
+static int sort_pstree_item()
+{
+	struct pstree_item *item;
+	int i = 0, j;
+
+	items = xmalloc(sizeof(item) * nr_item);
+	if (!items)
+		return -ENOMEM;
+
+	for_each_pstree_item(item)
+		items[i++] = item;
+
+	for (i = 0; i < nr_item - 1; i++) {
+		item = items[i + 1];
+		for (j = i; j >= 0; --j) {
+			if (pid_rst_prio(item->pid.virt, items[i]->pid.virt)) {
+				items[j + 1] = items[j];
+			} else break;
+		}
+		items[j + 1] = item;
+	}
+	return 0;
+}
+
+static int ql_unlock_network(struct pstree_item *pi)
+{
+	BUG_ON(pi);
+	network_unlock();
+	return 0;
+}
+
+static struct ql_restore_state rst_states[] = {
+	{"collect fds", ql_collect_fds, false},
+	{"resolve file master", ql_resolve_file_master, true},
+	{"freeze pstree", ql_freeze_process, false},
+	{"open files", ql_prepare_files, false},
+	{"post-open files", ql_post_prepare_files, false},
+	{"restore task", ql_restore_one_task, false},
+	{"unlock network", ql_unlock_network, true},
+	{"post-restore task", ql_cure_parasite_task, false},
+};
+
 int restore_ql_task()
 {
-	int ret;
-	struct pstree_item *item;
+	int ret, i, j;
 
-	ret = ql_read_pstree_image();
+	ret = ql_read_pstree_image(&nr_item);
 	if (ret < 0) goto err;
 
 	ret = prepare_pstree_kobj_ids();
@@ -594,45 +619,31 @@ int restore_ql_task()
 	ret = ql_prepare_namespace();
 	if (ret) goto err;
 
-	if (ql_prepare_shared() < 0) {
+	ret = sort_pstree_item(nr_item);
+	if (ret) goto err;
+
+	if (ql_collect_file_images() < 0) {
 		pr_err("Can't prepare shared info\n");
 		goto err;
 	}
 
-	/* Create socket per process other than ns */
-	ret = prepare_socket();
-	if (ret) goto err;
-
-	ret = freeze_pstree();
-	if (ret) goto err;
-
-	/* Open files */
-	for_each_pstree_item(item) {
-		ret = ql_prepare_files(item);
-		if (ret) goto err;
+	for (i = 0; i < ARRAY_SIZE(rst_states); i++) {
+		pr_info("Enter restore state: %s\n", rst_states[i].name);
+		if (rst_states[i].no_loop) {
+			ret = rst_states[i].restore_pstree_item(NULL);
+			if (ret) goto err;
+			continue;
+		}
+		for (j = 0; j < nr_item; j++) {
+			ret = rst_states[i].restore_pstree_item(items[j]);
+			if (ret) goto err;
+		}
 	}
 
-	/* Post-open */
-	//FIXME: may move this part to ql_prepare_files
-	for_each_pstree_item(item) {
-		ret = ql_post_prepare_files(item);
-		if (ret) goto err;
-	}
-
-	/* Send fds to pstree */
-	for_each_pstree_item(item) {
-		ret = ql_restore_one_task(item);
-		if (ret) goto err;
-	}
-
-	network_unlock();
-
-	for_each_pstree_item(item) {
-		ret = ql_cure_parasite_task(item);
-		if (ret) goto err;
-	}
 	pr_info("Restore quicklake task successfully!!!\n");
 err:
+	xfree(items);
+	items = NULL;
 	return ret;
 }
 

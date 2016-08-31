@@ -878,7 +878,7 @@ static int post_open_unix_sk(struct file_desc *d, int fd)
 		return 0;
 
 	/* Skip external sockets */
-	if (!list_empty(&peer->d.fd_info_head))
+	if (!is_quicklake_task && !list_empty(&peer->d.fd_info_head))
 		futex_wait_while(&peer->prepared, 0);
 
 	if (ui->ue->uflags & USK_INHERIT)
@@ -1021,6 +1021,10 @@ static int open_unixsk_pair_master(struct unix_sk_info *ui)
 	if (shutdown_unix_sk(sk[0], ui))
 		return -1;
 
+	if (is_quicklake_task) {
+		peer->d.new_fd = sk[1];
+		return sk[0];
+	}
 	tsk = socket(PF_UNIX, SOCK_DGRAM, 0);
 	if (tsk < 0) {
 		pr_perror("Can't make transport socket");
@@ -1044,17 +1048,20 @@ static int open_unixsk_pair_slave(struct unix_sk_info *ui)
 	struct fdinfo_list_entry *fle;
 	int sk;
 
-	fle = file_master(&ui->d);
+	if (!is_quicklake_task) {
+		fle = file_master(&ui->d);
 
-	pr_info("Opening pair slave (id %#x ino %#x peer %#x) on %d\n",
-			ui->ue->id, ui->ue->ino, ui->ue->peer, fle->fe->fd);
+		pr_info("Opening pair slave (id %#x ino %#x peer %#x) on %d\n",
+				ui->ue->id, ui->ue->ino, ui->ue->peer, fle->fe->fd);
 
-	sk = recv_fd(fle->fe->fd);
-	if (sk < 0) {
-		pr_err("Can't recv pair slave");
-		return -1;
-	}
-	close(fle->fe->fd);
+		sk = recv_fd(fle->fe->fd);
+		if (sk < 0) {
+			pr_err("Can't recv pair slave");
+			return -1;
+		}
+		close(fle->fe->fd);
+	} else
+		sk = ui->d.new_fd;
 
 	if (bind_unix_sk(sk, ui))
 		return -1;

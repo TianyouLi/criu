@@ -783,7 +783,7 @@ bool pid_in_pstree(pid_t pid)
 	return false;
 }
 
-int ql_read_pstree_image(void)
+int ql_read_pstree_image(int *nr_item)
 {
 	int ret = 0, i;
 	struct cr_img *img;
@@ -795,6 +795,7 @@ int ql_read_pstree_image(void)
 	if (!img)
 		return -1;
 
+	*nr_item = 0;
 	while (1) {
 		PstreeEntry *e;
 
@@ -806,6 +807,7 @@ int ql_read_pstree_image(void)
 		pi = alloc_pstree_item_with_ql();
 		if (pi == NULL)
 			break;
+		(*nr_item)++;
 
 		pi->pid.virt = e->pid;
 		pi->pgid = e->pgid;
