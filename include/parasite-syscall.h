@@ -140,5 +140,6 @@ extern int parasite_stop_daemon(struct parasite_ctl *ctl);
 extern int parasite_stop_on_syscall(int tasks, int sys_nr, enum trace_flags trace);
 extern int parasite_unmap(struct parasite_ctl *ctl, unsigned long addr);
 extern int ptrace_stop_pie(pid_t pid, void *addr, enum trace_flags *tf);
+extern int ql_free_file(struct parasite_ctl *ctl, struct pstree_item *item);
 
 #endif /* __CR_PARASITE_SYSCALL_H__ */

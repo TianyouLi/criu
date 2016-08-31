@@ -647,25 +647,4 @@ err:
 	return ret;
 }
 
-int ql_free_file(struct parasite_ctl *ctl, struct pstree_item *item,
-		struct parasite_drain_fd *dfds)
-{
-	int ret, size;
-	struct parasite_drain_fd *args;
 
-	pr_info("Quicklake free all the opened files (pid: %d)\n", ctl->pid.real);
-
-	size = drain_fds_size(dfds);
-	args = parasite_args_s(ctl, size);
-	memcpy(args, dfds, size);
-
-	ret = __parasite_execute_daemon(QUICKLAKE_CMD_FREE_FILE, ctl);
-	if (ret) {
-		pr_err("Quicklake failed to free files\n");
-		goto err;
-	}
-
-	ret |= __parasite_wait_daemon_ack(QUICKLAKE_CMD_FREE_FILE, ctl);
-err:
-	return ret;
-}

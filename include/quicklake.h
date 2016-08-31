@@ -10,7 +10,5 @@
 
 extern int switch_ql_state(pid_t pid, int request);
 extern int restore_ql_task();
-extern int ql_free_file(struct parasite_ctl *ctl, struct pstree_item *item,
-		struct parasite_drain_fd *dfds);
 
 #endif

@@ -99,7 +99,7 @@ int write_img_inventory(void)
 	he.has_fdinfo_per_id = true;
 	he.ns_per_id = true;
 	he.has_ns_per_id = true;
-	he.is_quicklake_task = opts.final_state == TASK_QL;
+	he.is_quicklake_task = opts.is_quicklake_task;
 	he.lsmtype = host_lsm_type();
 
 	crt.i.state = TASK_ALIVE;

@@ -116,7 +116,6 @@
 #define TASK_DEAD		0x2
 #define TASK_STOPPED		0x3
 #define TASK_HELPER		0x4
-#define TASK_QL			0x5
 
 #define CR_PARENT_LINK "parent"
 

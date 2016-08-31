@@ -1292,16 +1292,6 @@ static int dump_one_task(struct pstree_item *item)
 		goto err;
 	}
 
-	/* Quicklake need to close the files */
-	if (dfds && opts.final_state == TASK_QL) {
-		ret = ql_free_file(parasite_ctl, item, dfds);
-		if (ret) {
-			pr_err("Free files (pid: %d) failed with %d\n", pid, ret);
-			//FIXME: Do we need to stop the dumpee if failing to free files?
-			goto err_cure;
-		}
-	}
-
 	ret = parasite_stop_daemon(parasite_ctl);
 	if (ret) {
 		pr_err("Can't cure (pid: %d) from parasite\n", pid);
@@ -1314,10 +1304,12 @@ static int dump_one_task(struct pstree_item *item)
 		goto err;
 	}
 
-	ret = parasite_cure_seized(parasite_ctl);
-	if (ret) {
-		pr_err("Can't cure (pid: %d) from parasite\n", pid);
-		goto err;
+	if (!opts.is_quicklake_task) {
+		ret = parasite_cure_seized(parasite_ctl);
+		if (ret) {
+			pr_err("Can't cure (pid: %d) from parasite\n", pid);
+			goto err;
+		}
 	}
 
 	ret = dump_task_mm(pid, &pps_buf, &misc, &vmas, cr_imgset);
@@ -1330,6 +1322,10 @@ static int dump_one_task(struct pstree_item *item)
 	if (ret) {
 		pr_err("Dump fs (pid: %d) failed with %d\n", pid, ret);
 		goto err;
+	}
+
+	if (opts.is_quicklake_task) {
+		dmpi(item)->parasite_ctl = parasite_ctl;
 	}
 
 	close_cr_imgset(&cr_imgset);
@@ -1519,6 +1515,22 @@ int cr_dump_tasks(pid_t pid)
 	for_each_pstree_item(item) {
 		if (dump_one_task(item))
 			goto err;
+	}
+
+	if (opts.is_quicklake_task) {
+		for_each_pstree_item(item) {
+			struct parasite_ctl *ctl = dmpi(item)->parasite_ctl;
+
+			if (ql_free_file(ctl, item)) {
+				pr_err("Fail to free files with pid %d\n", item->pid.real);
+				goto err;
+			}
+
+			if (parasite_cure_seized(ctl)) {
+				pr_err("Can't cure (pid: %d) from parasite\n", item->pid.real);
+				goto err;
+			}
+		}
 	}
 
 	/* MNT namespaces are dumped after files to save remapped links */

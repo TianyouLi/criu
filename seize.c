@@ -288,7 +288,7 @@ void unseize_task_and_threads(const struct pstree_item *item, int st)
 
 	unseize_task(item->pid.real, item->state, st);
 
-	if (st == TASK_DEAD)
+	if (st == TASK_DEAD && !opts.is_quicklake_task)
 		return;
 
 	for (i = 1; i < item->nr_threads; i++)
@@ -337,7 +337,7 @@ void pstree_switch_state(struct pstree_item *root_item, int st)
 	for_each_pstree_item(item)
 		unseize_task_and_threads(item, st);
 
-	if (st == TASK_DEAD)
+	if (st == TASK_DEAD && !opts.is_quicklake_task)
 		pstree_wait(root_item);
 }
 

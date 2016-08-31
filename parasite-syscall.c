@@ -569,6 +569,27 @@ int parasite_dump_thread_seized(struct parasite_ctl *ctl, int id,
 	return dump_thread_core(pid, core, args);
 }
 
+int ql_free_file(struct parasite_ctl *ctl, struct pstree_item *item)
+{
+	struct thread_ctx octx;
+	int ret;
+
+	pr_info("Quicklake free all the opened files (pid: %d)\n", ctl->pid.real);
+
+	ret = get_thread_ctx(item->pid.real, &octx);
+	if (ret)
+		return -1;
+
+	ret = parasite_execute_trap_by_pid(QUICKLAKE_CMD_FREE_FILE, ctl,
+			item->pid.real, ctl->r_thread_stack, &octx);
+	if (ret) {
+		pr_err("Quicklake failed to free files\n");
+		return -1;
+	}
+
+	return 0;
+}
+
 int parasite_dump_sigacts_seized(struct parasite_ctl *ctl, struct cr_imgset *cr_imgset)
 {
 	struct parasite_dump_sa_args *args;

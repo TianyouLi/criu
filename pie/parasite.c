@@ -41,6 +41,8 @@ static struct parasite_dump_pages_args *mprotect_args = NULL;
 #define PR_GET_PDEATHSIG  2
 #endif
 
+static struct parasite_drain_fd dfds;
+
 static int mprotect_vmas(struct parasite_dump_pages_args *args)
 {
 	struct parasite_vma_entry *vmas, *vma;
@@ -261,7 +263,11 @@ grps_err:
 
 static int drain_fds(struct parasite_drain_fd *args)
 {
-	int ret;
+	int ret, i;
+
+	dfds.nr_fds = args->nr_fds;
+	for (i = 0; i < dfds.nr_fds; i++)
+		dfds.fds[i] = args->fds[i];
 
 	ret = send_fds(tsock, NULL, 0,
 		       args->fds, args->nr_fds, true);
@@ -271,12 +277,12 @@ static int drain_fds(struct parasite_drain_fd *args)
 	return ret;
 }
 
-static int quicklake_free_files(struct parasite_drain_fd *args)
+static int quicklake_free_files(void *args)
 {
 	int i = 0;
 
-	for (i = 0; i < args->nr_fds; i++) {
-		int fd = args->fds[i];
+	for (i = 0; i < dfds.nr_fds; i++) {
+		int fd = dfds.fds[i];
 
 		//TODO: How to handle file lock?
 		if (sys_close(fd)) {
@@ -636,9 +642,6 @@ static noinline __used int noinline parasite_daemon(void *args)
 		case PARASITE_CMD_CHECK_VDSO_MARK:
 			ret = parasite_check_vdso_mark(args);
 			break;
-		case QUICKLAKE_CMD_FREE_FILE:
-			ret = quicklake_free_files(args);
-			break;
 		default:
 			pr_err("Unknown command in parasite daemon thread leader: %d\n", m.cmd);
 			ret = -1;
@@ -722,6 +725,8 @@ int __used __parasite_entry parasite_service(unsigned int cmd, void *args)
 	switch (cmd) {
 	case PARASITE_CMD_DUMP_THREAD:
 		return dump_thread(args);
+	case QUICKLAKE_CMD_FREE_FILE:
+		return quicklake_free_files(args);
 	case PARASITE_CMD_INIT_DAEMON:
 		return parasite_init_daemon(args);
 	case PARASITE_CMD_UNMAP:
