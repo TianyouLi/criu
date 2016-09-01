@@ -110,6 +110,8 @@ static int timerfd_post_open(struct file_desc *d, int fd)
 {
 	struct timerfd_info *info = container_of(d, struct timerfd_info, d);
 
+	if (is_ql_task_restore)
+		return 0;
 	info->t_fd = fd;
 	list_add_tail(&info->rlist, &rst_timerfds);
 	return 0;

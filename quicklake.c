@@ -296,6 +296,8 @@ static int parasite_send_fds(struct parasite_ctl *ctl, struct pstree_item *pi)
 	struct parasite_drain_fd *args, *dfds;
 	struct fdinfo_list_entry *fle;
 
+	pr_info("pid %d send %d fds to remote\n", pi->pid.virt,
+			qli(pi)->dfds.nr_fds);
 	dfds = &(qli(pi)->dfds);
 	if (!dfds->nr_fds)
 		return 0;
@@ -323,9 +325,17 @@ static int parasite_send_fds(struct parasite_ctl *ctl, struct pstree_item *pi)
 
 	list_for_each_entry(fle, &rsti(pi)->fds, ps_list) {
 		new_fds[nr_new_fds++] = fle->desc->new_fd;
+		if (fcntl(fle->desc->new_fd, F_SETFD, fle->fe->flags) == -1) {
+			pr_err("Fail to set fd %d flags\n", fle->desc->new_fd);
+			return -1;
+		}
 	}
 	list_for_each_entry(fle, &rsti(pi)->eventpoll, ps_list) {
 		new_fds[nr_new_fds++] = fle->desc->new_fd;
+		if (fcntl(fle->desc->new_fd, F_SETFD, fle->fe->flags) == -1) {
+			pr_err("Fail to set fd %d flags\n", fle->desc->new_fd);
+			return -1;
+		}
 	}
 
 	BUG_ON(nr_new_fds != dfds->nr_fds);
@@ -665,5 +675,3 @@ err:
 	items = NULL;
 	return ret;
 }
-
-

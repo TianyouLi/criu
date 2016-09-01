@@ -113,6 +113,7 @@ static int ql_reopen_fd_as(int old_fd, int new_fd, struct fd_opts *opt,
 	return 0;
 }
 
+#define SETFL_MASK (O_APPEND | O_ASYNC | O_NONBLOCK | O_NDELAY | O_DIRECT | O_NOATIME)
 static int ql_restore_start_timerfd(struct parasite_timerfd_arg *arg)
 {
 	int i;
@@ -121,6 +122,9 @@ static int ql_restore_start_timerfd(struct parasite_timerfd_arg *arg)
 	ql_debug("Restore timerfd\n");
 	for (i = 0; i < arg->nr_timerfd; i++) {
 		tf = arg->timerfd + i;
+		retno = sys_fcntl(tf->fd, F_GETFL, 0);
+		if (retno < 0) return retno;
+		tf->own->flags = (SETFL_MASK & tf->own->flags) | (retno & ~SETFL_MASK);
 		retno = sys_fcntl(tf->fd, F_SETFL, tf->own->flags);
 		if (retno < 0)
 			return retno;
