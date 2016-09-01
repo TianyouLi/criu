@@ -37,7 +37,7 @@ int check_img_inventory(void)
 	fdinfo_per_id = he->has_fdinfo_per_id ?  he->fdinfo_per_id : false;
 	ns_per_id = he->has_ns_per_id ? he->ns_per_id : false;
 	quicklake_task_state = he->is_quicklake_task ? QL_TASK_STATE_RESTORE :
-			QL_TASK_STATE_DUMP;
+			QL_TASK_STATE_NONE;
 
 	if (he->root_ids) {
 		root_ids = xmalloc(sizeof(*root_ids));

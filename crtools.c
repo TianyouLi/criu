@@ -295,7 +295,7 @@ int main(int argc, char *argv[], char *envp[])
 			opts.final_state = TASK_ALIVE;
 			break;
 		case 'Q':
-			quicklake_task_state = QL_TASK_STATE_NONE;
+			quicklake_task_state = QL_TASK_STATE_DUMP;
 			break;
 		case 'x':
 			if (optarg && unix_sk_ids_parse(optarg) < 0)

@@ -246,6 +246,7 @@ static int ql_restore_files(struct parasite_drain_fd *args)
 	/* The method I use is similar to the restore of VMA in last stage. */
 	for (i = 0; i < args->nr_fds; i++) {
 		if (args->fds[i] <= fds[i]) {
+			ql_debug("Now reopen fd:%d->%d\n", fds[i], args->fds[i]);
 			if (ql_reopen_fd_as(fds[i], args->fds[i], opts + i, false))
 				return retno;
 		} else
@@ -253,6 +254,7 @@ static int ql_restore_files(struct parasite_drain_fd *args)
 	}
 	for (i = args->nr_fds - 1; i >= 0; --i) {
 		if (args->fds[i] > fds[i]) {
+			ql_debug("reopen:%d->%d\n",fds[i],args->fds[i]);
 			if (ql_reopen_fd_as(fds[i], args->fds[i], opts + i, false))
 				return retno;
 		} else
