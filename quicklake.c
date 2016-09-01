@@ -604,12 +604,13 @@ static int sort_pstree_item()
 	for (i = 0; i < nr_item - 1; i++) {
 		item = items[i + 1];
 		for (j = i; j >= 0; --j) {
-			if (pid_rst_prio(item->pid.virt, items[i]->pid.virt)) {
+			if (pid_rst_prio(item->pid.virt, items[j]->pid.virt)) {
 				items[j + 1] = items[j];
 			} else break;
 		}
 		items[j + 1] = item;
 	}
+
 	return 0;
 }
 
@@ -659,7 +660,10 @@ int restore_ql_task()
 			if (ret) goto err;
 			continue;
 		}
+
 		for (j = 0; j < nr_item; j++) {
+			BUG_ON(j + 1 < nr_item && items[j]->pid.virt >
+					items[j + 1]->pid.virt);
 			ret = rst_states[i].restore_pstree_item(items[j]);
 			if (ret) goto err;
 		}
