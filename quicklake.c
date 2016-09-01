@@ -262,11 +262,10 @@ static int parasite_add_epoll(struct parasite_ctl *ctl, struct pstree_item *pi)
 	int epoll_size;
 	int ret;
 
-	//TODO:check file master
 	list_for_each_entry(fle, &rsti(pi)->eventpoll, ps_list) {
 		int nr_epoll_fd = eventpoll_count_tfds(fle->desc);
 
-		if (!nr_epoll_fd)
+		if (!nr_epoll_fd || fle != file_master(fle->desc))
 			continue;
 
 		epoll_size = parasite_epoll_size(nr_epoll_fd);
@@ -418,9 +417,6 @@ static int ql_restore_one_task(struct pstree_item *item)
 		pr_err("Collect mappings (pid: %d) failed with %d\n", pid, ret);
 		goto stop;
 	}
-
-	//TODO
-	/* shared file tables need to be restore in kernel */
 
 	/* Attach to ql task*/
 	parasite_ctl = parasite_seized(pid, item, &vmas);
