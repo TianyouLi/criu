@@ -40,7 +40,6 @@ struct cg_root_opt {
 
 struct cr_options {
 	int			final_state;
-	bool is_quicklake_task;
 	char			*show_dump_file;
 	char			*show_fmt;
 	bool			check_ms_kernel;

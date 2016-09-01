@@ -27,6 +27,7 @@
 #include "plugin.h"
 #include "namespaces.h"
 #include "pstree.h"
+#include "quicklake.h"
 
 #include "protobuf.h"
 #include "protobuf/sk-unix.pb-c.h"
@@ -878,7 +879,7 @@ static int post_open_unix_sk(struct file_desc *d, int fd)
 		return 0;
 
 	/* Skip external sockets */
-	if (!is_quicklake_task && !list_empty(&peer->d.fd_info_head))
+	if (!is_ql_task_restore && !list_empty(&peer->d.fd_info_head))
 		futex_wait_while(&peer->prepared, 0);
 
 	if (ui->ue->uflags & USK_INHERIT)
@@ -1021,7 +1022,7 @@ static int open_unixsk_pair_master(struct unix_sk_info *ui)
 	if (shutdown_unix_sk(sk[0], ui))
 		return -1;
 
-	if (is_quicklake_task) {
+	if (is_ql_task_restore) {
 		peer->d.new_fd = sk[1];
 		return sk[0];
 	}
@@ -1048,7 +1049,7 @@ static int open_unixsk_pair_slave(struct unix_sk_info *ui)
 	struct fdinfo_list_entry *fle;
 	int sk;
 
-	if (!is_quicklake_task) {
+	if (!is_ql_task_restore) {
 		fle = file_master(&ui->d);
 
 		pr_info("Opening pair slave (id %#x ino %#x peer %#x) on %d\n",

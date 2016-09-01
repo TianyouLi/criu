@@ -39,6 +39,7 @@
 #include "cpu.h"
 #include "action-scripts.h"
 #include "security.h"
+#include "quicklake.h"
 
 #include "setproctitle.h"
 
@@ -294,7 +295,7 @@ int main(int argc, char *argv[], char *envp[])
 			opts.final_state = TASK_ALIVE;
 			break;
 		case 'Q':
-			opts.is_quicklake_task = true;
+			quicklake_task_state = QL_TASK_STATE_NONE;
 			break;
 		case 'x':
 			if (optarg && unix_sk_ids_parse(optarg) < 0)

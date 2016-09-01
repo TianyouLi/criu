@@ -1304,7 +1304,7 @@ static int dump_one_task(struct pstree_item *item)
 		goto err;
 	}
 
-	if (!opts.is_quicklake_task) {
+	if (is_ql_task_dump) {
 		ret = parasite_cure_seized(parasite_ctl);
 		if (ret) {
 			pr_err("Can't cure (pid: %d) from parasite\n", pid);
@@ -1324,7 +1324,7 @@ static int dump_one_task(struct pstree_item *item)
 		goto err;
 	}
 
-	if (opts.is_quicklake_task) {
+	if (is_ql_task_dump) {
 		dmpi(item)->parasite_ctl = parasite_ctl;
 	}
 
@@ -1517,7 +1517,7 @@ int cr_dump_tasks(pid_t pid)
 			goto err;
 	}
 
-	if (opts.is_quicklake_task) {
+	if (is_ql_task_dump) {
 		for_each_pstree_item(item) {
 			struct parasite_ctl *ctl = dmpi(item)->parasite_ctl;
 

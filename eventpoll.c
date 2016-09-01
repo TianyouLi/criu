@@ -21,6 +21,7 @@
 #include "image.h"
 #include "util.h"
 #include "log.h"
+#include "quicklake.h"
 
 #include "protobuf.h"
 #include "protobuf/eventpoll.pb-c.h"
@@ -39,8 +40,6 @@ struct eventpoll_tfd_file_info {
 };
 
 static LIST_HEAD(eventpoll_tfds);
-
-extern bool is_quicklake_task;
 
 /* Checks if file descriptor @lfd is eventfd */
 int is_eventpoll_link(char *link)
@@ -164,7 +163,7 @@ static int eventpoll_post_open(struct file_desc *d, int fd)
 	struct eventpoll_file_info *info;
 	int i;
 
-	if (is_quicklake_task)
+	if (is_ql_task_restore)
 		return 0;
 	info = container_of(d, struct eventpoll_file_info, d);
 

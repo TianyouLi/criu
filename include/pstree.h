@@ -7,6 +7,7 @@
 #include "rst_info.h"
 #include "protobuf/core.pb-c.h"
 #include "parasite.h"
+#include "quicklake.h"
 
 /*
  * That's the init process which usually inherit
@@ -60,18 +61,17 @@ struct ql_info {
 	struct parasite_ctl *parasite_ctl;
 };
 
-extern bool is_quicklake_task;
 /* See alloc_pstree_item() for details */
 static inline struct rst_info *rsti(struct pstree_item *i)
 {
-	if (is_quicklake_task)
+	if (is_ql_task_restore)
 		return &(((struct ql_info *)(i + 1))->rst_info);
 	return (struct rst_info *)(i + 1);
 }
 
 static inline struct dmp_info *dmpi(struct pstree_item *i)
 {
-	if (is_quicklake_task)
+	if (is_ql_task_restore)
 		return &(((struct ql_info *)(i + 1))->dmp_info);
 	return (struct dmp_info *)(i + 1);
 }

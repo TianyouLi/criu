@@ -39,6 +39,7 @@
 #include "fs-magic.h"
 #include "proc_parse.h"
 #include "cr_options.h"
+#include "quicklake.h"
 
 #include "parasite.h"
 #include "parasite-syscall.h"
@@ -897,7 +898,7 @@ int post_open_fd(int pid, struct fdinfo_list_entry *fle)
 	if (fle != file_master(d))
 		return 0;
 
-	if (is_quicklake_task)
+	if (is_ql_task_restore)
 		return d->ops->post_open(d, d->new_fd);
 	else
 		return d->ops->post_open(d, fle->fe->fd);

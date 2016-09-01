@@ -12,6 +12,7 @@
 #include "protobuf.h"
 #include "protobuf/inventory.pb-c.h"
 #include "protobuf/pagemap.pb-c.h"
+#include "quicklake.h"
 
 bool fdinfo_per_id = false;
 bool ns_per_id = false;
@@ -19,7 +20,6 @@ bool img_common_magic = true;
 TaskKobjIdsEntry *root_ids;
 u32 root_cg_set;
 Lsmtype image_lsm;
-bool is_quicklake_task = false;
 
 int check_img_inventory(void)
 {
@@ -36,7 +36,8 @@ int check_img_inventory(void)
 
 	fdinfo_per_id = he->has_fdinfo_per_id ?  he->fdinfo_per_id : false;
 	ns_per_id = he->has_ns_per_id ? he->ns_per_id : false;
-	is_quicklake_task = he->is_quicklake_task;
+	quicklake_task_state = he->is_quicklake_task ? QL_TASK_STATE_RESTORE :
+			QL_TASK_STATE_DUMP;
 
 	if (he->root_ids) {
 		root_ids = xmalloc(sizeof(*root_ids));
@@ -99,7 +100,7 @@ int write_img_inventory(void)
 	he.has_fdinfo_per_id = true;
 	he.ns_per_id = true;
 	he.has_ns_per_id = true;
-	he.is_quicklake_task = opts.is_quicklake_task;
+	he.is_quicklake_task = is_ql_task_dump;
 	he.lsmtype = host_lsm_type();
 
 	crt.i.state = TASK_ALIVE;

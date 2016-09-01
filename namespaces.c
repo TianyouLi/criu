@@ -19,6 +19,7 @@
 #include "pstree.h"
 #include "namespaces.h"
 #include "net.h"
+#include "quicklake.h"
 
 #include "protobuf.h"
 #include "protobuf/ns.pb-c.h"
@@ -982,7 +983,7 @@ int userns_call(uns_call_t call, int flags,
 		return -1;
 	}
 
-	if (!usernsd_pid || is_quicklake_task)
+	if (!usernsd_pid || is_ql_task_restore)
 		return call(arg, fd);
 
 	sk = get_service_fd(USERNSD_SK);

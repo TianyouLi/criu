@@ -22,17 +22,12 @@
 #include "crtools.h"
 #include "security.h"
 #include "seccomp.h"
-#include "quicklake.h"
-#include "cr_options.h"
 
 int unseize_task(pid_t pid, int orig_st, int st)
 {
 	pr_debug("\tUnseizing %d into %d\n", pid, st);
 
-	//FIXME: handle ql task with TASK_DEAD/TASK_STOPPED
-	if (opts.is_quicklake_task) {
-		switch_ql_state(pid, QL_DUMP);
-	} else if (st == TASK_DEAD) {
+	if (st == TASK_DEAD) {
 		kill(pid, SIGKILL);
 		return 0;
 	} else if (st == TASK_STOPPED) {

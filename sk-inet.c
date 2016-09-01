@@ -21,6 +21,7 @@
 #include "sockets.h"
 #include "sk-inet.h"
 #include "pstree.h"
+#include "quicklake.h"
 
 #define PB_ALEN_INET	1
 #define PB_ALEN_INET6	4
@@ -446,7 +447,7 @@ static int post_open_inet_sk(struct file_desc *d, int sk)
 	 * after unlocking connections.
 	 */
 	if (tcp_connection(ii->ie)) {
-		if (!is_quicklake_task) {
+		if (!is_ql_task_restore) {
 			pr_debug("Schedule %d socket for repair off\n", sk);
 			BUG_ON(ii->sk_fd != -1);
 			ii->sk_fd = sk;
@@ -458,7 +459,7 @@ static int post_open_inet_sk(struct file_desc *d, int sk)
 	if (ii->ie->opts->reuseaddr)
 		return 0;
 
-	if (!is_quicklake_task)
+	if (!is_ql_task_restore)
 		futex_wait_until(&ii->port->users, 0);
 
 	val = ii->ie->opts->reuseaddr;

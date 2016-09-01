@@ -17,7 +17,7 @@
 #include "stats.h"
 #include "xmalloc.h"
 #include "util.h"
-
+#include "quicklake.h"
 #define NR_ATTEMPTS 5
 
 const char frozen[]	= "FROZEN";
@@ -281,19 +281,31 @@ void unseize_task_and_threads(const struct pstree_item *item, int st)
 	if (item->state == TASK_DEAD)
 		return;
 
-	/*
-	 * The st is the state we want to switch tasks into,
-	 * the item->state is the state task was in when we seized one.
-	 */
+	if (is_ql_task_none) {
+		/*
+		 * The st is the state we want to switch tasks into,
+		 * the item->state is the state task was in when we seized one.
+		 */
 
-	unseize_task(item->pid.real, item->state, st);
+		unseize_task(item->pid.real, item->state, st);
 
-	if (st == TASK_DEAD && !opts.is_quicklake_task)
-		return;
+		if (st == TASK_DEAD)
+			return;
+	}
 
-	for (i = 1; i < item->nr_threads; i++)
-		if (ptrace(PTRACE_DETACH, item->threads[i].real, NULL, NULL))
-			pr_perror("Unable to detach from %d", item->threads[i].real);
+	for (i = 0; i < item->nr_threads; i++) {
+		int tid;
+		if (is_ql_task_restore) {
+			tid = item->threads[i].virt;
+		} else {
+			tid = item->threads[i].real;
+			if (is_ql_task_dump) {
+				switch_ql_state(tid, IOC_QL_DUMP);
+			}
+		}
+		if (ptrace(PTRACE_DETACH, tid, NULL, NULL))
+			pr_perror("Unable to detach from %d", tid);
+	}
 }
 
 static void pstree_wait(struct pstree_item *root_item)
@@ -337,7 +349,7 @@ void pstree_switch_state(struct pstree_item *root_item, int st)
 	for_each_pstree_item(item)
 		unseize_task_and_threads(item, st);
 
-	if (st == TASK_DEAD && !opts.is_quicklake_task)
+	if (st == TASK_DEAD && is_ql_task_none)
 		pstree_wait(root_item);
 }
 

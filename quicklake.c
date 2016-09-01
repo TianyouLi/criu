@@ -39,6 +39,7 @@
 static unsigned long parasite_args_size = PARASITE_ARG_SIZE_MIN;
 static struct pstree_item **items = NULL;
 static int nr_item = 0;
+int quicklake_task_state = QL_TASK_STATE_NONE;
 
 struct ql_restore_state {
 	char *name;
@@ -449,23 +450,41 @@ stop:
 	return ret;
 }
 
+static int wakeup_ql_task(int tid)
+{
+	struct proc_status_creds *creds = NULL;
+	int ret = switch_ql_state(tid, IOC_QL_RESTORE);
+	pr_info("Wake up tid %d\n", tid);
+	if (ret) return -1;
+	ret = seize_catch_task(tid);
+	if (ret) return -1;
+	ret = seize_wait_task(tid, -1, &creds);
+	xfree(creds);
+	return ret;
+}
+
 static int ql_freeze_process(struct pstree_item *pi)
 {
 	/*
 	 * TODO: the ql-task should stop after switching to
 	 * QL_RESTORE state and before we seize it.
 	 */
-	int ret = switch_ql_state(pi->pid.virt, QL_RESTORE);
-	ret = seize_catch_task(pi->pid.virt);
-	if (ret) {
-		pr_err("Fail to seize ql task: %d\n", pi->pid.virt);
-		return ret;
+	int i;
+	pi->state = wakeup_ql_task(pi->pid.virt);
+	if (pi->state < 0) {
+		pr_err("Fail to wake up ql task: %d\n", pi->pid.virt);
+		return -1;
 	}
-	ret = seize_wait_task(pi->pid.virt, -1, &dmpi(pi)->pi_creds);
-	if (ret < 0)
-		return ret;
-	pi->state = ret;
-	pr_info("Freeze pid %d state %d\n", pi->pid.virt, pi->state);
+
+	for (i = 0; i < pi->nr_threads; i++) {
+		if (pi->threads[i].virt != pi->pid.virt) {
+			if (wakeup_ql_task(pi->threads[i].virt) < 0) {
+				pr_err("Fail to wake up thread %d of pid %d\n",
+						pi->threads[i].virt, pi->pid.virt);
+				return -1;
+			}
+		}
+	}
 	return 0;
 }
 
