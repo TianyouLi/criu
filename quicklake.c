@@ -422,6 +422,7 @@ static int ql_restore_one_task(struct pstree_item *item)
 	parasite_ctl = parasite_seized(pid, item, &vmas);
 	if (!parasite_ctl) {
 		pr_err("Can't infect (pid: %d) with ql parasite\n", pid);
+		ret = -1;
 		goto stop;
 	}
 
