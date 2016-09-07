@@ -5,6 +5,7 @@
 #include "parasite.h"
 #include "eventpoll.h"
 #include "timerfd.h"
+#include "file-lock.h"
 #include "syscall.h"
 #include "log.h"
 #include "sk-inet.h"
@@ -197,6 +198,37 @@ static int ql_restore_epoll_add(struct epoll_arg *epoll_arg)
 	return 0;
 }
 
+static int ql_restore_flock(struct parasite_flock_args *flock_args)
+{
+	int i;
+	/*FIXME: I think it's ok to ignore error of setup flock */
+	for (i = 0; i < flock_args->nr_flock; i++) {
+		struct ql_flock_entry *entry = flock_args->entries + i;
+		if (entry->is_posix_lock) {
+			struct flock flk;
+			memset(&flk, 0, sizeof(flk));
+			flk.l_whence = SEEK_SET;
+			flk.l_start = entry->start;
+			flk.l_len = entry->len;
+			flk.l_pid = entry->pid;
+			flk.l_type = entry->type;
+
+			retno = sys_fcntl(entry->fd, F_SETLKW, (long) &flk);
+			if (retno) {
+				ql_debug("Can not set posix lock!\n");
+				continue;
+			}
+		} else {
+			retno = sys_flock(entry->fd, entry->cmd);
+			if (retno) {
+				ql_debug("Can not set flock\n");
+				continue;
+			}
+		}
+	}
+	return 0;
+}
+
 static int ql_repair_tcp(struct parasite_sk_tcp_arg *arg)
 {
 	int i;
@@ -304,6 +336,9 @@ static noinline __used int noinline ql_daemon(void *args)
 			break;
 		case QUICKLAKE_CMD_REPAIR_TCP:
 			ret = ql_repair_tcp(args);
+			break;
+		case QUICKLAKE_CMD_RESTORE_FLOCK:
+			ret = ql_restore_flock(args);
 			break;
 		default:
 			pr_err("Unknown command in parasite daemon thread leader: %d\n", m.cmd);

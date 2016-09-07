@@ -80,6 +80,8 @@ static struct parasite_ctl *parasite_seized(pid_t pid, struct pstree_item *item,
 	parasite_ensure_args_size(parasite_timerfd_size(qli(item)->nr_timerfd));
 	/* check sk tcp size */
 	parasite_ensure_args_size(parasite_sk_tcp_size(qli(item)->nr_sk_tcp));
+	/* check flocks size */
+	parasite_ensure_args_size(parasite_flock_size(qli(item)->nr_flock));
 
 	ctl->args_size = round_up(parasite_args_size, PAGE_SIZE);
 	ctl->pid.real = pid;
@@ -227,6 +229,34 @@ static int parasite_repair_sk_tcp(struct parasite_ctl *ctl,
 	return 0;
 }
 
+static int parasite_restore_flock(struct parasite_ctl *ctl,
+		struct pstree_item *pi)
+{
+	int flock_size, ret;
+	void *tf;
+
+	if (!qli(pi)->nr_flock)
+		return 0;
+
+	flock_size = parasite_flock_size(qli(pi)->nr_flock);
+	tf = parasite_args_s(ctl, flock_size);
+
+	ql_collect_file_locks(tf, pi->pid.virt);
+
+	ret = __parasite_execute_daemon(QUICKLAKE_CMD_RESTORE_FLOCK, ctl);
+	if (ret) {
+		pr_err("Can't restore flock %d\n", ret);
+		return ret;
+	}
+
+	ret = __parasite_wait_daemon_ack(QUICKLAKE_CMD_RESTORE_FLOCK, ctl);
+	if (ret) {
+		pr_err("Can't wait ack of restore flock\n");
+		return ret;
+	}
+	return 0;
+}
+
 static int parasite_start_timerfd(struct parasite_ctl *ctl,
 		struct pstree_item *pi)
 {
@@ -348,21 +378,6 @@ static int parasite_send_fds(struct parasite_ctl *ctl, struct pstree_item *pi)
 	if (ret)
 		goto err;
 
-	/* mask SIGCHLD */
-	{
-		struct sigaction sa = {
-			.sa_handler = SIG_DFL,
-			.sa_flags = SA_SIGINFO | SA_RESTART,
-		};
-
-		sigemptyset(&sa.sa_mask);
-		sigaddset(&sa.sa_mask, SIGCHLD);
-		if (sigaction(SIGCHLD, &sa, NULL)) {
-			pr_err("Unable to mask SIGCHLD\n");
-			ret = 1;
-		}
-	}
-
 err:
 	if (new_fds)
 		xfree(new_fds);
@@ -435,6 +450,9 @@ static int ql_restore_one_task(struct pstree_item *item)
 		goto stop;
 	}
 
+	/* Account flocks before parasite seize */
+	qli(item)->nr_flock = count_file_locks(pid);
+
 	/* Attach to ql task*/
 	parasite_ctl = parasite_seized(pid, item, &vmas);
 	if (!parasite_ctl) {
@@ -467,6 +485,27 @@ static int ql_restore_one_task(struct pstree_item *item)
 	if (ret) {
 		pr_err("Can't repair tcp of pid %d: %s\n", pid, strerror(-ret));
 		goto stop;
+	}
+
+	ret = parasite_restore_flock(parasite_ctl, item);
+	if (ret) {
+		pr_err("Can't repair flock of %d: %s\n", pid, strerror(-ret));
+		goto stop;
+	}
+
+	/* mask SIGCHLD */
+	{
+		struct sigaction sa = {
+			.sa_handler = SIG_DFL,
+			.sa_flags = SA_SIGINFO | SA_RESTART,
+		};
+
+		sigemptyset(&sa.sa_mask);
+		sigaddset(&sa.sa_mask, SIGCHLD);
+		if (sigaction(SIGCHLD, &sa, NULL)) {
+			pr_err("Unable to mask SIGCHLD\n");
+			ret = 1;
+		}
 	}
 
 stop:

@@ -46,6 +46,25 @@ struct file_lock {
 	int		owners_fd;
 };
 
+struct ql_flock_entry {
+	union {
+		struct {
+			long long start;
+			long long len;
+			int pid;
+			int type;
+		};
+		int cmd;
+	};
+	int fd;
+	char is_posix_lock;
+};
+
+struct parasite_flock_args {
+	int nr_flock;
+	struct ql_flock_entry entries[0];
+};
+
 extern struct list_head file_lock_list;
 
 extern struct file_lock *alloc_file_lock(void);
@@ -58,6 +77,12 @@ struct pid;
 struct fd_parms;
 extern int note_file_lock(struct pid *, int fd, int lfd, struct fd_parms *);
 extern int dump_file_locks(void);
+
+extern int ql_collect_file_locks(struct parasite_flock_args *args, int pid);
+extern int count_file_locks(int pid);
+
+#define parasite_flock_size(n)		(sizeof(struct parasite_flock_args) + \
+				n * sizeof(struct ql_flock_entry))
 
 #define OPT_FILE_LOCKS	"file-locks"
 

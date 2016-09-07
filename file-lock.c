@@ -339,6 +339,101 @@ static int restore_file_locks(int pid)
 	return ret;
 }
 
+int count_file_locks(int pid)
+{
+	int count = 0;
+	struct file_lock_rst *lr;
+
+	if (file_locks_cinfo.flags & COLLECT_HAPPENED) {
+		list_for_each_entry(lr, &file_lock_list, l) {
+			count += lr->fle->pid == pid;
+		}
+	} else {
+		struct cr_img *img  = open_image(CR_FD_FILE_LOCKS_PID, O_RSTR, pid);
+		if (!img)
+			return 0;
+
+		while (1) {
+			FileLockEntry *fle = NULL;
+			if (pb_read_one_eof(img, &fle, PB_FILE_LOCK) <= 0)
+				break;
+
+			file_lock_entry__free_unpacked(fle, NULL);
+			count++;
+		}
+
+		close_image(img);
+	}
+
+	return count;
+}
+
+static int ql_fill_flock_entry(struct ql_flock_entry *qfe, FileLockEntry *fle)
+{
+	qfe->fd = fle->fd;
+	if (fle->flag & FL_FLOCK) {
+		qfe->is_posix_lock = 0;
+		if (fle->type & LOCK_MAND) {
+			qfe->cmd = fle->type;
+		} else if (fle->type == F_RDLCK) {
+			qfe->cmd = LOCK_SH;
+		} else if (fle->type == F_WRLCK) {
+			qfe->cmd = LOCK_EX;
+		} else if (fle->type == F_UNLCK) {
+			qfe->cmd = LOCK_UN;
+		} else
+			return 1;
+	} else {
+		qfe->is_posix_lock = 1;
+		qfe->start = fle->start;
+		qfe->len = fle->len;
+		qfe->pid = fle->pid;
+		qfe->type = fle->type;
+	}
+	return 0;
+}
+
+int ql_collect_file_locks(struct parasite_flock_args *args, int pid)
+{
+	int i = 0;
+
+	if (!opts.handle_file_locks)
+		goto out;
+
+	//FIXME: I think it's ok to ignore error of flock
+	if (file_locks_cinfo.flags & COLLECT_HAPPENED) {
+		struct file_lock_rst *lr;
+		list_for_each_entry(lr, &file_lock_list, l) {
+			if (lr->fle->pid == pid) {
+				if (!ql_fill_flock_entry(args->entries + i, lr->fle))
+					i++;
+			}
+		}
+	} else {
+		struct cr_img *img  = open_image(CR_FD_FILE_LOCKS_PID, O_RSTR, pid);
+		if (!img)
+			return -1;
+
+		while (1) {
+			FileLockEntry *fle = NULL;
+			if (pb_read_one_eof(img, &fle, PB_FILE_LOCK) <= 0)
+				break;
+
+			if (ql_fill_flock_entry(args->entries + i, fle)) {
+				file_lock_entry__free_unpacked(fle, NULL);
+				break;
+			}
+			file_lock_entry__free_unpacked(fle, NULL);
+			i++;
+		}
+
+		close_image(img);
+	}
+out:
+	args->nr_flock = i;
+	return 0;
+}
+
 static int restore_file_locks_legacy(int pid)
 {
 	int ret = -1;

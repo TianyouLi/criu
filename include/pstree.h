@@ -57,6 +57,7 @@ struct ql_info {
 	int nr_timerfd;
 	struct list_head timerfd_list;
 	int nr_sk_tcp;
+	int nr_flock;
 	struct list_head sk_tcp_list;
 	struct parasite_ctl *parasite_ctl;
 };
