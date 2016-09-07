@@ -398,6 +398,7 @@ static void sigchld_handler(int signal, siginfo_t *siginfo, void *data)
 	else if (WIFSTOPPED(status))
 		pr_err("%d was stopped by %d unexpectedly\n", pid, WSTOPSIG(status));
 
+	pr_err("CRIU about to exit\n");
 	exit(1);
 }
 

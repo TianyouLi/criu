@@ -345,6 +345,23 @@ static int parasite_send_fds(struct parasite_ctl *ctl, struct pstree_item *pi)
 	}
 
 	ret = __parasite_wait_daemon_ack(QUICKLAKE_CMD_RESTORE_FILE, ctl);
+	if (ret)
+		goto err;
+
+	/* mask SIGCHLD */
+	{
+		struct sigaction sa = {
+			.sa_handler = SIG_DFL,
+			.sa_flags = SA_SIGINFO | SA_RESTART,
+		};
+
+		sigemptyset(&sa.sa_mask);
+		sigaddset(&sa.sa_mask, SIGCHLD);
+		if (sigaction(SIGCHLD, &sa, NULL)) {
+			pr_err("Unable to mask SIGCHLD\n");
+			ret = 1;
+		}
+	}
 
 err:
 	if (new_fds)
