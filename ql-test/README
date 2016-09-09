@@ -1,0 +1,39 @@
+sets: some c program for test
+criu.sh: 
+	command: ./criu.sh ./a.out <other args for a.out>
+	description: run a program name ./a.out, run criu and a checkpoint and the output images are in the directory <pid>. BE CAREFULL: YOU NEED TO STOP THE PROCESS WHOSE NAME IS SAME AS a.out BEFORE.
+rm.sh:
+	command: ./rm.sh	<prog_name>
+	description: kill all processes whose name is a.out
+other *.sh:
+	Same as criu.sh
+
+BE CAREFULL: If you meet fail in restore, you need to stop all the test processes before next test
+
+Test example:
+1, a process (single thread, no opened files)
+gcc sets/sleep.c
+./criu.sh ./a.out
+cd <pid>
+criu restore -d -vvv
+2, multiple processes (no opened files)
+gcc sets/multi-fork.c
+./criu.sh ./a.out 20
+cd <pid>
+criu restore -d -vvv
+3, multiple process (with tcp connection)
+gcc sets/tcp.c
+./criu.sh ./a.out
+cd <pid>
+criu restore -d -vvv --tcp-established
+4, multiple processes (use execlp to create new process)
+gcc slow-load.c -o slow-load
+gcc execlp.c
+./criu.sh ./a.out 20
+cd <pid>
+criu restore -d -vvv
+5, aio.c: test aio
+6, epoll.c: test epoll
+7, fdflags.c: test file descriptor flags
+8, flock.c: test file lock
+9, multi-ps-th.c util.c: test multiple processes and threads
