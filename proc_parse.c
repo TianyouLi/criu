@@ -2115,6 +2115,23 @@ bool proc_status_creds_eq(struct proc_status_creds *o1, struct proc_status_creds
 	return memcmp(o1, o2, sizeof(struct proc_status_creds)) == 0;
 }
 
+int check_ql_state(pid_t pid)
+{
+	int fd = open_proc(pid, "crstat");
+	char state[10];
+	int len;
+	if (fd < 0)
+		return -1;
+	len = read(fd, state, sizeof(state));
+	if (len < 0)
+		return -1;
+	if (is_ql_task_dump)
+		return strncmp(state, "Normal", sizeof("Normal"));
+	if (is_ql_task_restore)
+		return strncmp(state, "Sleep", sizeof("Sleep"));
+	return -1;
+}
+
 int parse_children(pid_t pid, pid_t **_c, int *_n)
 {
 	pid_t *ch = NULL;

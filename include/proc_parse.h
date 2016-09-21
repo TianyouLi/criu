@@ -189,5 +189,6 @@ extern int aufs_parse(struct mount_info *mi);
 extern int overlayfs_parse(struct mount_info *mi);
 
 int parse_children(pid_t pid, pid_t **_c, int *_n);
+int check_ql_state(pid_t pid);
 
 #endif /* __CR_PROC_PARSE_H__ */

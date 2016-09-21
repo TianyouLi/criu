@@ -518,6 +518,10 @@ int collect_pstree(pid_t pid)
 	int ret;
 
 	timing_start(TIME_FREEZING);
+	if (!is_ql_task_none && check_ql_state(pid)) {
+		pr_err("Can not dump quicklake task before waking up\n");
+		return -1;
+	}
 
 	if (opts.freeze_cgroup && freeze_processes())
 		return -1;
