@@ -324,6 +324,7 @@ static int parasite_send_fds(struct parasite_ctl *ctl, struct pstree_item *pi)
 	int ret = -1, size, *new_fds = NULL, nr_new_fds = 0;
 	struct parasite_drain_fd *args, *dfds;
 	struct fdinfo_list_entry *fle;
+	int i;
 
 	pr_info("pid %d send %d fds to remote\n", pi->pid.virt,
 			qli(pi)->dfds.nr_fds);
@@ -333,17 +334,6 @@ static int parasite_send_fds(struct parasite_ctl *ctl, struct pstree_item *pi)
 
 	size = drain_fds_size(dfds);
 	args = parasite_args_s(ctl, size);
-	memcpy(args, dfds, size);
-
-	ret = __parasite_execute_daemon(QUICKLAKE_CMD_RESTORE_FILE, ctl);
-	if (ret) {
-		pr_err("Parasite failed to sync restore_files\n");
-		goto err;
-	}
-
-	ret = __parasite_wait_daemon_ack(QUICKLAKE_CMD_RESTORE_FILE, ctl);
-	if (ret)
-		goto err;
 
 	new_fds = xmalloc(size);
 	if (!new_fds) {
@@ -368,6 +358,33 @@ static int parasite_send_fds(struct parasite_ctl *ctl, struct pstree_item *pi)
 	}
 
 	BUG_ON(nr_new_fds != dfds->nr_fds);
+	/* Sort newfds acoording to old_fds */
+	for (i = 1; i < nr_new_fds; i++) {
+		if (dfds->fds[i - 1] > dfds->fds[i]) {
+			int old_fd = dfds->fds[i];
+			int new_fd = new_fds[i];
+			int j = i;
+			while (j > 0 && dfds->fds[j - 1] > old_fd) {
+				dfds->fds[j] = dfds->fds[j - 1];
+				new_fds[j] = new_fds[j - 1];
+				j--;
+			}
+			new_fds[j] = new_fd;
+			dfds->fds[j] = old_fd;
+		}
+	}
+	memcpy(args, dfds, size);
+
+	ret = __parasite_execute_daemon(QUICKLAKE_CMD_RESTORE_FILE, ctl);
+	if (ret) {
+		pr_err("Parasite failed to sync restore_files\n");
+		goto err;
+	}
+
+	ret = __parasite_wait_daemon_ack(QUICKLAKE_CMD_RESTORE_FILE, ctl);
+	if (ret)
+		goto err;
+
 	ret = send_fds(ctl->tsock, NULL, 0, new_fds, nr_new_fds, true);
 	if (ret) {
 		pr_err("Fail to send fds\n");
