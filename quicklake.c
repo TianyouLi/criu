@@ -66,7 +66,7 @@ static struct parasite_ctl *parasite_seized(pid_t pid, struct pstree_item *item,
 	struct parasite_ctl *ctl;
 	unsigned long p, map_exchange_size;
 
-	BUG_ON(item->threads[0].virt != pid);
+//	BUG_ON(item->threads[0].virt != pid);
 
 	/* Search area for mmap system call */
 	ctl = parasite_prep_ctl(pid, vma_area_list);

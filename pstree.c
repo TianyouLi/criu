@@ -265,7 +265,11 @@ int dump_pstree(struct pstree_item *root_item)
 		pr_info("Process: %d(%d)\n", item->pid.virt, item->pid.real);
 
 		e.pid		= item->pid.virt;
-		e.ppid		= item->parent ? item->parent->pid.virt : 0;
+		if (is_ql_task_dump) {
+			e.rpid	= item->pid.real;
+			e.ppid	= item->parent ? item->parent->pid.real : 0;
+		} else
+			e.ppid	= item->parent ? item->parent->pid.virt : 0;
 		e.pgid		= item->pgid;
 		e.sid		= item->sid;
 		e.n_threads	= item->nr_threads;
@@ -275,7 +279,10 @@ int dump_pstree(struct pstree_item *root_item)
 			goto err;
 
 		for (i = 0; i < item->nr_threads; i++)
-			e.threads[i] = item->threads[i].virt;
+			if (is_ql_task_dump)
+				e.threads[i] = item->threads[i].real;
+			else
+				e.threads[i] = item->threads[i].virt;
 
 		ret = pb_write_one(img, &e, PB_PSTREE);
 		xfree(e.threads);
@@ -809,7 +816,10 @@ int ql_read_pstree_image(int *nr_item)
 			break;
 		(*nr_item)++;
 
-		pi->pid.virt = e->pid;
+		if (is_ql_task_restore)
+			pi->pid.virt = e->rpid;
+		else
+			pi->pid.virt = e->pid;
 		pi->pgid = e->pgid;
 		pi->sid = e->sid;
 

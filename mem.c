@@ -273,11 +273,17 @@ static int __parasite_dump_pages_seized(struct parasite_ctl *ctl,
 		goto out;
 
 	if (pp_ret == NULL) {
-		ret = open_page_xfer(&xfer, CR_FD_PAGEMAP, ctl->pid.virt);
+		if (is_ql_task_dump)
+			ret = open_page_xfer(&xfer, CR_FD_PAGEMAP, ctl->pid.real);
+		else
+			ret = open_page_xfer(&xfer, CR_FD_PAGEMAP, ctl->pid.virt);
 		if (ret < 0)
 			goto out_pp;
 	} else {
-		ret = check_parent_page_xfer(CR_FD_PAGEMAP, ctl->pid.virt);
+		if (is_ql_task_dump)
+			ret = check_parent_page_xfer(CR_FD_PAGEMAP, ctl->pid.real);
+		else
+			ret = check_parent_page_xfer(CR_FD_PAGEMAP, ctl->pid.virt);
 		if (ret < 0)
 			goto out_pp;
 

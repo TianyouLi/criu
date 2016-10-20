@@ -1240,7 +1240,10 @@ static int dump_one_task(struct pstree_item *item)
 		goto err_cure;
 	}
 
-	cr_imgset = cr_task_imgset_open(item->pid.virt, O_DUMP);
+	if (is_ql_task_dump)
+		cr_imgset = cr_task_imgset_open(item->pid.real, O_DUMP);
+	else
+		cr_imgset = cr_task_imgset_open(item->pid.virt, O_DUMP);
 	if (!cr_imgset)
 		goto err_cure;
 
@@ -1408,7 +1411,10 @@ err:
 
 		pr_info("\tPre-dumping %d\n", ctl->pid.virt);
 		timing_start(TIME_MEMWRITE);
-		ret = open_page_xfer(&xfer, CR_FD_PAGEMAP, ctl->pid.virt);
+		if (is_ql_task_dump)
+			ret = open_page_xfer(&xfer, CR_FD_PAGEMAP, ctl->pid.real);
+		else
+			ret = open_page_xfer(&xfer, CR_FD_PAGEMAP, ctl->pid.virt);
 		if (ret < 0)
 			break;
 

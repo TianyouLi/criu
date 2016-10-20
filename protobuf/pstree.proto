@@ -1,7 +1,8 @@
 message pstree_entry {
 	required uint32			pid		= 1;
-	required uint32			ppid		= 2;
-	required uint32			pgid		= 3;
-	required uint32			sid		= 4;
-	repeated uint32			threads		= 5;
+	required uint32			rpid		= 2;
+	required uint32			ppid		= 3;
+	required uint32			pgid		= 4;
+	required uint32			sid		= 5;
+	repeated uint32			threads		= 6;
 }
