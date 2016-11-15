@@ -10,6 +10,7 @@
 #include "files.h"
 #include "pipes.h"
 #include "util-pie.h"
+#include "quicklake.h"
 
 #include "protobuf.h"
 #include "protobuf/pipe.pb-c.h"
@@ -324,8 +325,12 @@ static int open_pipe(struct file_desc *d)
 		goto out;
 	}
 
-	if (!pi->create)
-		return recv_pipe_fd(pi);
+	if (!pi->create) {
+		if (is_ql_task_restore)
+			return 0;
+		else
+			return recv_pipe_fd(pi);
+	}
 
 	if (pipe(pfd) < 0) {
 		pr_perror("Can't create pipe");
@@ -337,10 +342,12 @@ static int open_pipe(struct file_desc *d)
 	if (ret)
 		return -1;
 
-	sock = socket(PF_UNIX, SOCK_DGRAM, 0);
-	if (sock < 0) {
-		pr_perror("Can't create socket");
-		return -1;
+	if (!is_ql_task_restore) {
+		sock = socket(PF_UNIX, SOCK_DGRAM, 0);
+		if (sock < 0) {
+			pr_perror("Can't create socket");
+			return -1;
+		}
 	}
 
 	list_for_each_entry(p, &pi->pipe_list, pipe_list) {
@@ -349,16 +356,21 @@ static int open_pipe(struct file_desc *d)
 
 		fle = file_master(&p->d);
 		fd = pfd[p->pe->flags & O_WRONLY];
-
-		if (send_fd_to_peer(fd, fle, sock)) {
-			pr_perror("Can't send file descriptor");
-			return -1;
+		if (is_ql_task_restore)
+			fle->desc->new_fd = fd;
+		else {
+			if (send_fd_to_peer(fd, fle, sock)) {
+				pr_perror("Can't send file descriptor");
+				return -1;
+			}
 		}
 	}
 
-	close(sock);
+	if (!is_ql_task_restore) {
+		close(sock);
 
-	close(pfd[!(pi->pe->flags & O_WRONLY)]);
+		close(pfd[!(pi->pe->flags & O_WRONLY)]);
+	}
 	tmp = pfd[pi->pe->flags & O_WRONLY];
 
 out:

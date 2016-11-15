@@ -151,7 +151,8 @@ static int ql_open_fdinfos(struct pstree_item *pi, struct list_head *list)
 		fd = d->ops->open(d);
 		if (fd < 0)
 			return -1;
-		d->new_fd = fd;
+		if (fd !=0)
+			d->new_fd = fd;
 		if (d->ops->type == FD_TYPES__TIMERFD) {
 			ql_add_timerfd_info(pi, d, fle->fe->fd);
 		} else if (d->ops->type == FD_TYPES__INETSK) {
